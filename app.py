@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v7.0 - Playwright Edition for Railway & Colab
+AdShare Monitor v7.0 - Playwright Edition for Railway
 """
 
 import asyncio
@@ -39,12 +39,6 @@ except ImportError:
     from playwright.async_api import async_playwright
     import asyncio
 
-# Install Playwright browsers
-try:
-    subprocess.run([sys.executable, "-m", "playwright", "install", "firefox"], check=True)
-except:
-    pass
-
 # Initialize colorama
 init(autoreset=True)
 
@@ -68,7 +62,7 @@ CONFIG = {
     'browser_url': "https://adsha.re/surf",
     'browser_width': 1280,
     'browser_height': 720,
-    'headless_mode': True,
+    'headless_mode': True,  # True for Railway
     
     # Profile Settings
     'firefox_profile_url': "https://github.com/huijuo14/playright-/releases/download/v1/firefox_profile_backup.tar.gz",
@@ -162,89 +156,93 @@ class FirefoxProfileManager:
             return False
     
     def get_profile_directory(self):
-        """Find the profile directory"""
+        """Get the profile directory path"""
         try:
-            # Method 1: Search directories for profile name
+            # Look for directory containing the profile name
             for item in self.profile_path.iterdir():
                 if item.is_dir() and self.target_profile_name in item.name:
-                    logger.info(f"✅ Found profile via directory search: {item}")
+                    logger.info(f"✅ Found profile directory: {item}")
                     return str(item)
             
-            # Method 2: Search for any directory containing the pattern
-            for item in self.profile_path.iterdir():
-                if item.is_dir() and "o9clx99u" in item.name:
-                    logger.info(f"✅ Found matching profile: {item}")
-                    return str(item)
-            
-            # Method 3: Try to download if not found
+            # If not found, download it
             logger.info("🔄 Profile not found locally, downloading...")
             if self.download_and_extract_profile():
-                # Search again after download
+                # Try to find it again after download
                 for item in self.profile_path.iterdir():
-                    if item.is_dir() and (self.target_profile_name in item.name or "o9clx99u" in item.name):
+                    if item.is_dir() and self.target_profile_name in item.name:
                         logger.info(f"✅ Found profile after download: {item}")
                         return str(item)
             
-            logger.error("❌ No profile found after all attempts")
+            logger.error("❌ Could not find or download profile directory")
             return None
             
         except Exception as e:
-            logger.error(f"❌ Profile search failed: {e}")
+            logger.error(f"❌ Profile directory search failed: {e}")
             return None
 
 # ==================== PLAYWRIGHT BROWSER MANAGER ====================
 
 class PlaywrightBrowser:
     def __init__(self):
+        self.playwright = None
         self.browser = None
         self.page = None
-        self.context = None
         self.state = {
             'is_logged_in': False,
             'browser_active': False
         }
         self.profile_manager = FirefoxProfileManager()
         
-    async def setup_browser(self):
-        """Setup Playwright Firefox with profile"""
+    async def setup_playwright(self):
+        """Setup Playwright with Firefox profile"""
         try:
             logger.info("🚀 Starting Firefox with Playwright...")
             
-            # Get profile directory
+            # Install browsers if not present
+            try:
+                from playwright import install
+                install()
+            except:
+                pass
+            
+            self.playwright = await async_playwright().start()
+            
+            # Get Firefox profile directory
             profile_dir = self.profile_manager.get_profile_directory()
+            
             if not profile_dir:
                 logger.error("❌ Profile directory not found")
                 return False
             
             logger.info(f"📁 Using Firefox profile: {profile_dir}")
             
-            playwright = await async_playwright().start()
-            
             # Launch Firefox with profile
-            self.browser = await playwright.firefox.launch(
+            self.browser = await self.playwright.firefox.launch(
                 headless=CONFIG['headless_mode'],
                 args=[
                     f"--window-size={CONFIG['browser_width']},{CONFIG['browser_height']}",
                     "--no-sandbox",
                     "--disable-dev-shm-usage"
-                ]
+                ],
+                firefox_user_prefs={
+                    "dom.webdriver.enabled": False,
+                    "useAutomationExtension": False,
+                }
             )
             
-            # Create context with persistent storage
-            self.context = await self.browser.new_context(
+            # Create context with profile
+            context = await self.browser.new_context(
                 viewport={'width': CONFIG['browser_width'], 'height': CONFIG['browser_height']},
-                user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0",
-                storage_state=profile_dir if os.path.exists(os.path.join(profile_dir, 'storage.json')) else None
+                user_agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0'
             )
             
-            self.page = await self.context.new_page()
+            self.page = await context.new_page()
             
-            # Set extra HTTP headers
-            await self.page.set_extra_http_headers({
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-            })
+            # Stealth mode
+            await self.page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+            """)
             
             self.state['browser_active'] = True
             logger.info("✅ Playwright Firefox started successfully")
@@ -264,14 +262,13 @@ class PlaywrightBrowser:
         try:
             current_url = self.page.url.lower()
             page_content = await self.page.content()
-            page_content_lower = page_content.lower()
             
             if "adsha.re/login" in current_url:
                 return "LOGIN_REQUIRED"
             elif "adsha.re/surf" in current_url:
-                if "start surfing" in page_content_lower or "surf now" in page_content_lower:
+                if "start surfing" in page_content.lower() or "surf now" in page_content.lower():
                     return "GAME_READY"
-                elif "surfing" in page_content_lower or "earning" in page_content_lower:
+                elif "surfing" in page_content.lower() or "earning" in page_content.lower():
                     return "GAME_ACTIVE"
                 else:
                     return "GAME_LOADING"
@@ -475,7 +472,7 @@ class PlaywrightBrowser:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             screenshot_file = f"screenshot_{timestamp}.png"
             
-            await self.page.screenshot(path=screenshot_file, full_page=True)
+            await self.page.screenshot(path=screenshot_file)
             logger.info(f"📸 Screenshot taken: {screenshot_file}")
             return screenshot_file
         except Exception as e:
@@ -491,7 +488,7 @@ class PlaywrightBrowser:
         if self.state['is_logged_in']:
             return True
             
-        await self.page.goto(CONFIG['browser_url'], wait_until='networkidle', timeout=60000)
+        await self.page.goto(CONFIG['browser_url'], wait_until='networkidle')
         await self.smart_delay_async()
         
         page_state = await self.detect_page_state()
@@ -509,8 +506,10 @@ class PlaywrightBrowser:
         """Close the browser"""
         if self.browser:
             await self.browser.close()
-            self.state['browser_active'] = False
-            self.state['is_logged_in'] = False
+        if self.playwright:
+            await self.playwright.stop()
+        self.state['browser_active'] = False
+        self.state['is_logged_in'] = False
 
 # ==================== STATE MANAGEMENT ====================
 
@@ -593,7 +592,7 @@ class LeaderboardParser:
             
             return leaderboard
         except Exception as e:
-            logger.error(f"BeautifulSoup parsing failed: {e}")
+            logger.error(f"BeautifulSoup parsing error: {e}")
             return []
     
     @staticmethod
@@ -601,8 +600,6 @@ class LeaderboardParser:
         leaderboard = LeaderboardParser.parse_with_beautifulsoup(html)
         leaderboard.sort(key=lambda x: x['rank'])
         return leaderboard
-
-# ==================== LEADERBOARD FETCHING ====================
 
 def fetch_leaderboard() -> Optional[List[Dict]]:
     try:
@@ -642,12 +639,6 @@ def print_full_status():
     tz = pytz.timezone(CONFIG['timezone'])
     current_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
     print(f"{Fore.WHITE}Time: {Fore.CYAN}{current_time}")
-    
-    # Browser status
-    browser_status = "🟢 ACTIVE" if state.playwright_browser.state['browser_active'] else "🔴 INACTIVE"
-    login_status = "✅ LOGGED IN" if state.playwright_browser.state['is_logged_in'] else "❌ NOT LOGGED IN"
-    print(f"{Fore.WHITE}Browser: {Fore.GREEN if state.playwright_browser.state['browser_active'] else Fore.RED}{browser_status}")
-    print(f"{Fore.WHITE}Login: {Fore.GREEN if state.playwright_browser.state['is_logged_in'] else Fore.RED}{login_status}")
     
     # Last checked
     if state.last_check_time:
@@ -779,87 +770,15 @@ def get_my_value(my_data: Dict) -> int:
     else:
         return my_data['today_credits'] + my_data['yesterday_credits']
 
-async def check_competition_status():
-    """Single competition check"""
-    
-    current_time = datetime.now()
-    state.last_check_time = current_time
-    
-    leaderboard = fetch_leaderboard()
-    if not leaderboard:
-        logger.error(f"{Fore.RED}Failed to fetch leaderboard")
-        if not state.playwright_browser.state['browser_active']:
-            await start_browser()
-        print_full_status()
-        return
-    
-    state.leaderboard = leaderboard
-    
-    # Find my position
-    my_data = None
-    for entry in state.leaderboard:
-        if entry['user_id'] == CONFIG['my_user_id']:
-            my_data = entry
-            state.my_position = entry['rank']
-            break
-    
-    if not my_data:
-        logger.error(f"{Fore.RED}User #{CONFIG['my_user_id']} not in top 10!")
-        if not state.playwright_browser.state['browser_active']:
-            await start_browser()
-        print_full_status()
-        return
-    
-    my_value = get_my_value(my_data)
-    
-    # PREDICTION CALCULATION
-    if state.last_my_credits > 0 and state.last_credits_time:
-        time_diff_hours = (current_time - state.last_credits_time).total_seconds() / 3600.0
-        credits_gained = my_value - state.last_my_credits
-        
-        if credits_gained > 0 and time_diff_hours > 0:
-            state.credits_growth_rate = credits_gained / time_diff_hours
-        else:
-            state.credits_growth_rate = 0
-    else:
-        state.credits_growth_rate = 0
-    
-    # Update credits tracking
-    state.last_my_credits = my_value
-    state.last_credits_time = current_time
-    
-    # Competition logic - SINGLE DECISION
-    if state.my_position != 1:
-        if not state.playwright_browser.state['browser_active']:
-            await start_browser()
-        state.target_achieved = False
-    else:
-        target, explanation = calculate_target(state.leaderboard)
-        state.current_target = target
-        
-        if my_value >= target:
-            if state.playwright_browser.state['browser_active']:
-                await stop_browser()
-            state.target_achieved = True
-        else:
-            if not state.playwright_browser.state['browser_active']:
-                await start_browser()
-            state.target_achieved = False
-    
-    # Single status display
-    print_full_status()
-
-# ==================== BROWSER MANAGEMENT ====================
-
 async def start_browser():
-    """Start Firefox browser"""
+    """Start Firefox browser with Playwright"""
     if state.playwright_browser.state['browser_active']:
         return True
     
     try:
-        logger.info("🚀 Starting Firefox browser...")
+        logger.info("🚀 Starting Firefox browser with Playwright...")
         
-        if await state.playwright_browser.setup_browser():
+        if await state.playwright_browser.setup_playwright():
             # Ensure login
             if await state.playwright_browser.ensure_logged_in():
                 logger.info("✅ Firefox browser started and logged in")
@@ -983,16 +902,85 @@ async def telegram_bot_loop():
         
         await asyncio.sleep(10)
 
+# ==================== COMPETITION CHECK ====================
+
+async def check_competition_status():
+    """Single competition check"""
+    
+    current_time = datetime.now()
+    state.last_check_time = current_time
+    
+    leaderboard = fetch_leaderboard()
+    if not leaderboard:
+        logger.error(f"{Fore.RED}Failed to fetch leaderboard")
+        await start_browser()
+        print_full_status()
+        return
+    
+    state.leaderboard = leaderboard
+    
+    # Find my position
+    my_data = None
+    for entry in state.leaderboard:
+        if entry['user_id'] == CONFIG['my_user_id']:
+            my_data = entry
+            state.my_position = entry['rank']
+            break
+    
+    if not my_data:
+        logger.error(f"{Fore.RED}User #{CONFIG['my_user_id']} not in top 10!")
+        await start_browser()
+        print_full_status()
+        return
+    
+    my_value = get_my_value(my_data)
+    
+    # PREDICTION CALCULATION
+    if state.last_my_credits > 0 and state.last_credits_time:
+        time_diff_hours = (current_time - state.last_credits_time).total_seconds() / 3600.0
+        credits_gained = my_value - state.last_my_credits
+        
+        if credits_gained > 0 and time_diff_hours > 0:
+            state.credits_growth_rate = credits_gained / time_diff_hours
+        else:
+            state.credits_growth_rate = 0
+    else:
+        state.credits_growth_rate = 0
+    
+    # Update credits tracking
+    state.last_my_credits = my_value
+    state.last_credits_time = current_time
+    
+    # Competition logic - SINGLE DECISION
+    if state.my_position != 1:
+        if not state.playwright_browser.state['browser_active']:
+            await start_browser()
+        state.target_achieved = False
+    else:
+        target, explanation = calculate_target(state.leaderboard)
+        state.current_target = target
+        
+        if my_value >= target:
+            if state.playwright_browser.state['browser_active']:
+                await stop_browser()
+            state.target_achieved = True
+        else:
+            if not state.playwright_browser.state['browser_active']:
+                await start_browser()
+            state.target_achieved = False
+    
+    # Single status display
+    print_full_status()
+
 # ==================== MAIN LOOP ====================
 
 async def main_loop():
-    """Main monitoring loop"""
     print_full_status()
     
     logger.info(f"{Fore.GREEN}AdShare Monitor v7.0 - Playwright Edition STARTED")
     logger.info(f"{Fore.CYAN}Using Playwright Firefox with profile management")
     
-    send_telegram_message("🚀 <b>AdShare Monitor v7.0 Started!</b>\nPlaywright Firefox Edition")
+    send_telegram_message("🚀 <b>AdShare Monitor v7.0 Started!</b>\nPlaywright Firefox Edition on Railway")
     
     if CONFIG['auto_start']:
         state.is_running = True
@@ -1025,53 +1013,18 @@ def signal_handler(sig, frame):
     asyncio.create_task(stop_browser())
     sys.exit(0)
 
-# ==================== COLAB TEST FUNCTION ====================
-
-async def test_colab():
-    """Test function for Google Colab"""
-    print("🧪 Testing AdShare Monitor in Colab...")
-    
-    # Test profile download
-    profile_manager = FirefoxProfileManager()
-    profile_dir = profile_manager.get_profile_directory()
-    print(f"Profile directory: {profile_dir}")
-    
-    # Test browser setup
-    browser = PlaywrightBrowser()
-    if await browser.setup_browser():
-        print("✅ Browser setup successful")
-        
-        # Test login
-        if await browser.force_login():
-            print("✅ Login successful")
-            
-            # Take screenshot
-            screenshot = await browser.take_screenshot()
-            if screenshot:
-                print(f"✅ Screenshot taken: {screenshot}")
-            
-            await browser.close()
-        else:
-            print("❌ Login failed")
-            await browser.close()
-    else:
-        print("❌ Browser setup failed")
-
-if __name__ == '__main__':
+async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # For Colab testing
-    if 'COLAB_GPU' in os.environ:
-        asyncio.run(test_colab())
-    else:
-        # Start Telegram bot in background
-        import threading
-        def run_telegram_bot():
-            asyncio.run(telegram_bot_loop())
-        
-        bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-        bot_thread.start()
-        
-        # Start main loop
-        asyncio.run(main_loop())
+    # Start telegram bot in background
+    bot_task = asyncio.create_task(telegram_bot_loop())
+    
+    # Start main loop
+    await main_loop()
+    
+    # Cancel bot task when main loop ends
+    bot_task.cancel()
+
+if __name__ == '__main__':
+    asyncio.run(main())
