@@ -1,0 +1,7 @@
+requests==2.31.0
+beautifulsoup4==4.12.2
+pytz==2023.3
+colorama==0.4.6
+playwright==1.40.0
+urllib3==2.1.0
+asyncio==3.4.3
