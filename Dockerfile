@@ -38,17 +38,17 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Firefox 144.0
-RUN wget -O /tmp/firefox.tar.bz2 "https://download-installer.cdn.mozilla.net/pub/firefox/releases/144.0/linux-x86_64/en-US/firefox-144.0.tar.bz2" && \
-    tar -xjf /tmp/firefox.tar.bz2 -C /opt && \
-    ln -sf /opt/firefox/firefox /usr/local/bin/firefox && \
-    rm /tmp/firefox.tar.bz2
+# Install latest Firefox from Mozilla PPA
+RUN wget -q -O- https://packages.mozilla.org/apt/mozilla-archive-keyring.gpg | gpg --dearmor | tee /etc/apt/trusted.gpg.d/mozilla.gpg > /dev/null
+RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/mozilla.gpg] https://packages.mozilla.org/apt mozilla main" | tee /etc/apt/sources.list.d/mozilla.list
+RUN echo "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000" | tee /etc/apt/preferences.d/mozilla
+RUN apt-get update && apt-get install -y firefox && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Install Playwright
+# Install Playwright with system Firefox
 RUN playwright install firefox
 
 # Copy application code
