@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v7.2 - Railway Fixed Edition
-Enhanced profile handling with Firefox 144.0
+AdShare Monitor v7.1 - Railway Production Edition
 """
 
 import asyncio
@@ -63,33 +62,12 @@ CONFIG = {
     
     # Profile Settings
     'firefox_profile_url': "https://github.com/huijuo14/playright-/releases/download/v1/firefox_profile_backup.tar.gz",
-    'profile_name': "o9clx99u.surf",
+    'profile_name': "profile",
     
     # Technical Settings
     'leaderboard_url': 'https://adsha.re/ten',
+    'cookies': 'adshare_e=bonna.b.o.rre.z%40gmail.com; adshare_s=e4dc9d210bb38a86cd360253a82feb2cc6ed84f5ddf778be89484fb476998e0dfc31280c575a38a2467067cd6ec1d6ff7e25aa46dedd6ea454831df26365dfc2; adshare_d=20251025; adshare_h=https%3A%2F%2Fadsha.re%2Faffiliates',
     'timezone': 'Asia/Kolkata',
-    
-    # Headers for leaderboard (EXACT CURL HEADERS)
-    'leaderboard_headers': {
-        'authority': 'adsha.re',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'accept-language': 'en-US,en;q=0.9',
-        'cache-control': 'no-cache',
-        'content-type': 'application/x-www-form-urlencoded',
-        'cookie': 'adshare_e=bonna.b.o.rre.z%40gmail.com; adshare_s=e4dc9d210bb38a86cd360253a82feb2cc6ed84f5ddf778be89484fb476998e0dfc31280c575a38a2467067cd6ec1d6ff7e25aa46dedd6ea454831df26365dfc2; adshare_d=20251025; adshare_h=https%3A%2F%2Fadsha.re%2Faffiliates',
-        'origin': 'https://adsha.re',
-        'pragma': 'no-cache',
-        'referer': 'https://adsha.re/affiliates',
-        'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Linux"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'same-origin',
-        'sec-fetch-user': '?1',
-        'upgrade-insecure-requests': '1',
-        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    },
     
     # Auto Start
     'auto_start': True,
@@ -109,133 +87,79 @@ logger = logging.getLogger(__name__)
 class FirefoxProfileManager:
     def __init__(self):
         self.profile_path = Path.home() / '.mozilla' / 'firefox'
-        self.target_profile_name = "o9clx99u.surf"
+        self.target_profile_name = "profile"
         
-    def cleanup_old_profiles(self):
-        """Remove old profiles to avoid conflicts"""
-        try:
-            logger.info("PROFILE: Cleaning up old profiles...")
-            for item in self.profile_path.iterdir():
-                if item.is_dir() and "surf" in item.name.lower():
-                    if self.target_profile_name not in item.name:
-                        logger.info(f"PROFILE: Removing old profile {item.name}")
-                        shutil.rmtree(item, ignore_errors=True)
-        except Exception as e:
-            logger.error(f"PROFILE CLEANUP ERROR: {e}")
-    
     def download_and_extract_profile(self):
-        """Download and extract Firefox profile with enhanced error handling"""
+        """Download and extract Firefox profile from GitHub releases"""
         try:
             backup_url = CONFIG['firefox_profile_url']
             backup_file = "firefox_profile_backup.tar.gz"
             
-            logger.info(f"DOWNLOAD: Starting download from {backup_url}")
+            logger.info(f"Downloading Firefox profile from {backup_url}")
+            
+            # Download the profile backup
+            urllib.request.urlretrieve(backup_url, backup_file)
+            
+            if not os.path.exists(backup_file):
+                logger.error("Failed to download profile backup")
+                return False
             
             # Ensure firefox directory exists
             self.profile_path.mkdir(parents=True, exist_ok=True)
             
-            # Download with progress
-            def report_progress(block_num, block_size, total_size):
-                percent = int(block_num * block_size * 100 / total_size)
-                if percent % 20 == 0:
-                    logger.info(f"DOWNLOAD: {percent}% complete")
-            
-            urllib.request.urlretrieve(backup_url, backup_file, report_progress)
-            
-            if not os.path.exists(backup_file):
-                logger.error("DOWNLOAD: Failed to download profile backup")
-                return False
-            
-            file_size = os.path.getsize(backup_file)
-            logger.info(f"DOWNLOAD: Success - {file_size} bytes downloaded")
-            
-            # Clean up old profiles first
-            self.cleanup_old_profiles()
-            
-            # Extract with detailed logging
-            logger.info("EXTRACT: Starting extraction...")
+            # Extract the backup
+            logger.info("Extracting Firefox profile...")
             with tarfile.open(backup_file, 'r:gz') as tar:
                 members = tar.getmembers()
-                logger.info(f"EXTRACT: Archive contains {len(members)} items")
+                logger.info(f"Archive contains {len(members)} items")
                 
-                # Extract with preservation
+                # Extract everything to firefox directory
                 tar.extractall(self.profile_path)
-                
-                # Log extracted files
-                extracted_dirs = []
-                for member in members[:10]:  # Log first 10 files
-                    if member.isdir():
-                        extracted_dirs.append(member.name)
-                
-                logger.info(f"EXTRACT: Sample directories: {extracted_dirs[:5]}")
             
-            # Clean up backup file
+            # Clean up
             os.remove(backup_file)
-            logger.info("EXTRACT: Cleanup completed")
             
+            logger.info("Firefox profile extraction completed")
             return True
             
         except Exception as e:
-            logger.error(f"PROFILE SETUP FAILED: {e}")
+            logger.error(f"Profile setup failed: {e}")
             return False
     
-    def verify_profile_compatibility(self, profile_dir):
-        """Verify profile compatibility with Firefox 144.0"""
-        try:
-            compatibility_file = Path(profile_dir) / "compatibility.ini"
-            if compatibility_file.exists():
-                content = compatibility_file.read_text()
-                logger.info(f"PROFILE COMPATIBILITY: {compatibility_file}")
-            return True
-        except Exception as e:
-            logger.warning(f"PROFILE COMPATIBILITY CHECK FAILED: {e}")
-            return True  # Continue anyway
-    
     def get_profile_directory(self):
-        """Get the profile directory with enhanced debugging"""
+        """Get the profile directory path with extensive debugging"""
         try:
-            logger.info("PROFILE SEARCH: Looking for profile directory...")
+            logger.info("Searching for Firefox profile...")
+            
+            # Check if firefox directory exists
+            if not self.profile_path.exists():
+                logger.error(f"Firefox directory not found: {self.profile_path}")
+                return None
             
             # List all directories for debugging
-            dirs_before = list(self.profile_path.iterdir())
-            logger.info(f"PROFILE DIRS BEFORE: {[d.name for d in dirs_before if d.is_dir()]}")
+            all_dirs = list(self.profile_path.iterdir())
+            logger.info(f"Found {len(all_dirs)} items in Firefox directory")
             
-            # Look for our specific profile
-            for item in self.profile_path.iterdir():
+            # Look for directory containing the profile name
+            for item in all_dirs:
                 if item.is_dir() and self.target_profile_name in item.name:
-                    logger.info(f"PROFILE FOUND: {item}")
-                    
-                    # Verify compatibility
-                    self.verify_profile_compatibility(item)
-                    
-                    # Check if profile is complete
-                    required_files = ['prefs.js', 'places.sqlite', 'cookies.sqlite']
-                    missing_files = []
-                    for file in required_files:
-                        if not (item / file).exists():
-                            missing_files.append(file)
-                    
-                    if missing_files:
-                        logger.warning(f"PROFILE MISSING FILES: {missing_files}")
-                    else:
-                        logger.info("PROFILE: All required files present")
-                    
+                    logger.info(f"Found profile directory: {item}")
                     return str(item)
             
             # If not found, download it
-            logger.info("PROFILE NOT FOUND: Attempting download...")
+            logger.info("Profile not found locally, downloading...")
             if self.download_and_extract_profile():
                 # Try to find it again after download
                 for item in self.profile_path.iterdir():
                     if item.is_dir() and self.target_profile_name in item.name:
-                        logger.info(f"PROFILE FOUND AFTER DOWNLOAD: {item}")
+                        logger.info(f"Found profile after download: {item}")
                         return str(item)
             
-            logger.error("PROFILE: Could not find or download profile directory")
+            logger.error("Could not find or download profile directory")
             return None
             
         except Exception as e:
-            logger.error(f"PROFILE SEARCH FAILED: {e}")
+            logger.error(f"Profile directory search failed: {e}")
             return None
 
 # ==================== PLAYWRIGHT BROWSER MANAGER ====================
@@ -245,91 +169,73 @@ class PlaywrightBrowser:
         self.playwright = None
         self.browser = None
         self.page = None
+        self.context = None
         self.state = {
             'is_logged_in': False,
             'browser_active': False,
-            'last_activity': None
+            'profile_loaded': False
         }
         self.profile_manager = FirefoxProfileManager()
         
     async def setup_playwright(self):
-        """Setup Playwright with Firefox 144.0 and profile"""
+        """Setup Playwright with Firefox profile"""
         try:
-            logger.info("PLAYWRIGHT: Starting setup...")
-            
-            # Check if browsers are installed
-            try:
-                from playwright import install
-                logger.info("PLAYWRIGHT: Installing browsers if needed...")
-                install()
-            except Exception as e:
-                logger.info(f"PLAYWRIGHT: Browser install check: {e}")
+            logger.info("Starting Firefox with Playwright...")
             
             self.playwright = await async_playwright().start()
-            logger.info("PLAYWRIGHT: Engine started")
             
             # Get Firefox profile directory
             profile_dir = self.profile_manager.get_profile_directory()
             
             if not profile_dir:
-                logger.error("PLAYWRIGHT: No profile directory found")
-                return False
+                logger.error("Profile directory not found, using fresh profile")
+                # Continue without profile
+                profile_dir = None
             
-            logger.info(f"PLAYWRIGHT: Using profile - {profile_dir}")
-            
-            # Launch Firefox with specific executable path for Firefox 144.0
-            firefox_executable_path = "/opt/firefox/firefox"
-            
-            logger.info("PLAYWRIGHT: Launching Firefox with args...")
-            self.browser = await self.playwright.firefox.launch(
-                headless=CONFIG['headless_mode'],
-                executable_path=firefox_executable_path,
-                args=[
+            # Launch Firefox with or without profile
+            launch_options = {
+                'headless': CONFIG['headless_mode'],
+                'args': [
                     f"--window-size={CONFIG['browser_width']},{CONFIG['browser_height']}",
                     "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-web-security",
-                    "--disable-features=VizDisplayCompositor"
-                ],
-                firefox_user_prefs={
-                    "dom.webdriver.enabled": False,
-                    "useAutomationExtension": False,
-                    "browser.startup.homepage": "about:blank",
-                    "browser.startup.page": 0
-                }
-            )
+                    "--disable-dev-shm-usage"
+                ]
+            }
             
-            # Create context
-            context = await self.browser.new_context(
-                viewport={'width': CONFIG['browser_width'], 'height': CONFIG['browser_height']},
-                user_agent=CONFIG['leaderboard_headers']['user-agent'],
-                ignore_https_errors=True
-            )
+            if profile_dir:
+                logger.info(f"Using Firefox profile: {profile_dir}")
+                # For Playwright, we need to use persistent context
+                self.context = await self.playwright.firefox.launch_persistent_context(
+                    user_data_dir=profile_dir,
+                    **launch_options
+                )
+                self.state['profile_loaded'] = True
+            else:
+                logger.info("Using fresh Firefox profile")
+                self.browser = await self.playwright.firefox.launch(**launch_options)
+                self.context = await self.browser.new_context()
             
-            self.page = await context.new_page()
-            
-            # Enhanced stealth
-            await self.page.add_init_script("""
+            # Configure context
+            await self.context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
             """)
             
+            self.page = await self.context.new_page()
+            await self.page.set_viewport_size({"width": CONFIG['browser_width'], "height": CONFIG['browser_height']})
+            
             self.state['browser_active'] = True
-            self.state['last_activity'] = datetime.now()
-            logger.info("PLAYWRIGHT: Firefox started successfully")
+            logger.info("Playwright Firefox started successfully")
             return True
             
         except Exception as e:
-            logger.error(f"PLAYWRIGHT SETUP FAILED: {e}")
+            logger.error(f"Playwright setup failed: {e}")
             return False
     
     async def smart_delay_async(self, min_delay=2, max_delay=5):
         """Random delay between actions"""
         import random
-        delay = random.uniform(min_delay, max_delay)
-        await asyncio.sleep(delay)
+        await asyncio.sleep(random.uniform(min_delay, max_delay))
     
     async def detect_page_state(self):
         """Detect current page state"""
@@ -357,22 +263,22 @@ class PlaywrightBrowser:
     async def force_login(self):
         """EXACT WORKING LOGIN FUNCTION - Playwright Version"""
         try:
-            logger.info("LOGIN: Starting ultimate login...")
-            await self.page.goto("https://adsha.re/login", wait_until='networkidle', timeout=90000)
-            await self.page.wait_for_selector("body", timeout=30000)
+            logger.info("STARTING ULTIMATE LOGIN (12+ METHODS)...")
+            await self.page.goto("https://adsha.re/login", wait_until='networkidle', timeout=60000)
+            await self.page.wait_for_selector("body", timeout=20000)
             await self.smart_delay_async()
             
             page_content = await self.page.content()
             soup = BeautifulSoup(page_content, 'html.parser')
             all_forms = soup.find_all('form')
-            logger.info(f"LOGIN: Found {len(all_forms)} forms")
+            logger.info(f"Found {len(all_forms)} forms")
             
             form = soup.find('form', {'name': 'login'})
             if not form:
-                logger.warning("LOGIN: No login form found by name, trying first form")
+                logger.warning("No login form found by name, trying first form")
                 form = all_forms[0] if all_forms else None
             if not form:
-                logger.error("LOGIN: No forms found at all!")
+                logger.error("No forms found at all!")
                 return False
             
             password_field_name = None
@@ -381,31 +287,31 @@ class PlaywrightBrowser:
                 field_value = field.get('value', '')
                 if field_value == 'Password' and field_name != 'mail' and field_name:
                     password_field_name = field_name
-                    logger.info(f"LOGIN: Found password field by value: {password_field_name}")
+                    logger.info(f"Found password field by value: {password_field_name}")
                     break
             if not password_field_name:
                 password_fields = form.find_all('input', {'type': 'password'})
                 if password_fields:
                     password_field_name = password_fields[0].get('name')
-                    logger.info(f"LOGIN: Found password field by type: {password_field_name}")
+                    logger.info(f"Found password field by type: {password_field_name}")
             if not password_field_name:
                 for field in form.find_all('input'):
                     field_name = field.get('name', '')
                     field_type = field.get('type', '')
                     if field_name and field_name != 'mail' and field_type != 'email':
                         password_field_name = field_name
-                        logger.info(f"LOGIN: Found password field by exclusion: {password_field_name}")
+                        logger.info(f"Found password field by exclusion: {password_field_name}")
                         break
             if not password_field_name:
                 inputs = form.find_all('input')
                 if len(inputs) >= 2:
                     password_field_name = inputs[1].get('name')
-                    logger.info(f"LOGIN: Found password field by position: {password_field_name}")
+                    logger.info(f"Found password field by position: {password_field_name}")
             if not password_field_name:
-                logger.error("LOGIN: Could not find password field by any method")
+                logger.error("Could not find password field by any method")
                 return False
             
-            logger.info("LOGIN: Filling email...")
+            logger.info("Filling email (8 methods)...")
             email_selectors = [
                 "input[name='mail']",
                 "input[type='email']",
@@ -422,18 +328,18 @@ class PlaywrightBrowser:
                     if await self.page.is_visible(selector):
                         await self.page.fill(selector, "")
                         await self.page.fill(selector, CONFIG['email'])
-                        logger.info(f"LOGIN: Email filled with: {selector}")
+                        logger.info(f"Email filled with: {selector}")
                         email_filled = True
                         break
                 except:
                     continue
             if not email_filled:
-                logger.error("LOGIN: All email filling methods failed")
+                logger.error("All email filling methods failed")
                 return False
             
             await self.smart_delay_async()
             
-            logger.info("LOGIN: Filling password...")
+            logger.info("Filling password (6 methods)...")
             password_selectors = [
                 f"input[name='{password_field_name}']",
                 "input[type='password']",
@@ -448,18 +354,18 @@ class PlaywrightBrowser:
                     if await self.page.is_visible(selector):
                         await self.page.fill(selector, "")
                         await self.page.fill(selector, CONFIG['password'])
-                        logger.info(f"LOGIN: Password filled with: {selector}")
+                        logger.info(f"Password filled with: {selector}")
                         password_filled = True
                         break
                 except:
                     continue
             if not password_filled:
-                logger.error("LOGIN: All password filling methods failed")
+                logger.error("All password filling methods failed")
                 return False
             
             await self.smart_delay_async()
             
-            logger.info("LOGIN: Submitting form...")
+            logger.info("Submitting form (12+ methods)...")
             login_selectors = [
                 "button[type='submit']",
                 "input[type='submit']",
@@ -480,7 +386,7 @@ class PlaywrightBrowser:
                 try:
                     if await self.page.is_visible(selector):
                         await self.page.click(selector)
-                        logger.info(f"LOGIN: Login clicked with: {selector}")
+                        logger.info(f"Login clicked with: {selector}")
                         login_clicked = True
                         break
                 except:
@@ -491,7 +397,7 @@ class PlaywrightBrowser:
                         const form = document.querySelector("form");
                         if (form) form.submit();
                     }""")
-                    logger.info("LOGIN: Form submitted via JavaScript")
+                    logger.info("Form submitted via JavaScript")
                     login_clicked = True
                 except:
                     pass
@@ -500,7 +406,7 @@ class PlaywrightBrowser:
                     password_selector = f"input[name='{password_field_name}']"
                     await self.page.click(password_selector)
                     await self.page.keyboard.press('Enter')
-                    logger.info("LOGIN: Enter key pressed in password field")
+                    logger.info("Enter key pressed in password field")
                     login_clicked = True
                 except:
                     pass
@@ -508,33 +414,33 @@ class PlaywrightBrowser:
                 try:
                     await self.page.click('body')
                     await self.page.keyboard.press('Enter')
-                    logger.info("LOGIN: Enter key pressed on body")
+                    logger.info("Enter key pressed on body")
                     login_clicked = True
                 except:
                     pass
             if not login_clicked:
-                logger.error("LOGIN: All login submission methods failed")
+                logger.error("All login submission methods failed")
                 return False
             
             await self.smart_delay_async()
             await asyncio.sleep(8)
             
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=90000)
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=60000)
             await self.smart_delay_async()
             
             final_url = self.page.url.lower()
-            logger.info(f"LOGIN: Final URL: {final_url}")
+            logger.info(f"Final URL: {final_url}")
             
             if "surf" in final_url or "dashboard" in final_url:
-                logger.info("LOGIN: SUCCESSFUL!")
+                logger.info("LOGIN SUCCESSFUL!")
                 self.state['is_logged_in'] = True
                 await self.send_telegram("✅ <b>LOGIN SUCCESSFUL!</b>")
                 return True
             elif "login" in final_url:
-                logger.error("LOGIN: FAILED - Still on login page")
+                logger.error("LOGIN FAILED - Still on login page")
                 return False
             else:
-                logger.warning(f"LOGIN: On unexpected page: {final_url}")
+                logger.warning(f"On unexpected page: {final_url}, but might be logged in")
                 self.state['is_logged_in'] = True
                 return True
         except Exception as e:
@@ -547,11 +453,11 @@ class PlaywrightBrowser:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             screenshot_file = f"screenshot_{timestamp}.png"
             
-            await self.page.screenshot(path=screenshot_file, full_page=True)
-            logger.info(f"SCREENSHOT: Taken - {screenshot_file}")
+            await self.page.screenshot(path=screenshot_file)
+            logger.info(f"Screenshot taken: {screenshot_file}")
             return screenshot_file
         except Exception as e:
-            logger.error(f"SCREENSHOT FAILED: {e}")
+            logger.error(f"Screenshot failed: {e}")
             return None
 
     async def send_telegram(self, message):
@@ -563,45 +469,44 @@ class PlaywrightBrowser:
         if self.state['is_logged_in']:
             return True
             
-        try:
-            await self.page.goto(CONFIG['browser_url'], wait_until='networkidle', timeout=60000)
-            await self.smart_delay_async()
-            
-            page_state = await self.detect_page_state()
-            logger.info(f"LOGIN CHECK: Page state - {page_state}")
-            
-            if page_state == "LOGIN_REQUIRED":
-                logger.info("LOGIN: Required, attempting automatic login...")
-                return await self.force_login()
-            elif page_state in ["GAME_ACTIVE", "GAME_READY", "GAME_LOADING"]:
-                self.state['is_logged_in'] = True
-                logger.info("LOGIN: Already logged in")
-                return True
-            else:
-                logger.warning(f"LOGIN: Unexpected page state: {page_state}")
-                return await self.force_login()
-        except Exception as e:
-            logger.error(f"LOGIN CHECK ERROR: {e}")
+        await self.page.goto(CONFIG['browser_url'], wait_until='networkidle')
+        await self.smart_delay_async()
+        
+        page_state = await self.detect_page_state()
+        logger.info(f"Current page state: {page_state}")
+        
+        if page_state == "LOGIN_REQUIRED":
+            logger.info("Login required, attempting automatic login...")
+            return await self.force_login()
+        elif page_state in ["GAME_ACTIVE", "GAME_READY", "GAME_LOADING"]:
+            self.state['is_logged_in'] = True
+            logger.info("Already logged in")
+            return True
+        else:
+            logger.warning(f"Unexpected page state: {page_state}, attempting login...")
             return await self.force_login()
     
     async def close(self):
         """Close the browser"""
         try:
+            if self.context:
+                await self.context.close()
             if self.browser:
                 await self.browser.close()
             if self.playwright:
                 await self.playwright.stop()
             self.state['browser_active'] = False
             self.state['is_logged_in'] = False
-            logger.info("BROWSER: Closed successfully")
+            logger.info("Browser closed successfully")
         except Exception as e:
-            logger.error(f"BROWSER CLOSE ERROR: {e}")
+            logger.error(f"Error closing browser: {e}")
 
 # ==================== STATE MANAGEMENT ====================
 
 class MonitorState:
     def __init__(self):
         self.is_running = False
+        self.browser_active = False
         self.leaderboard = []
         self.my_position = None
         self.target_achieved = False
@@ -625,27 +530,21 @@ class LeaderboardParser:
             soup = BeautifulSoup(html, 'html.parser')
             leaderboard = []
             
-            # Multiple selector strategies
             selectors = [
                 'div[style*="width:250px"][style*="margin:5px auto"]',
                 'div[style*="width:250px"]',
                 'div[style*="margin:5px auto"]',
-                'div.leaderboard-entry',
-                'div.entry'
             ]
             
             entries = []
             for selector in selectors:
                 entries = soup.select(selector)
                 if entries:
-                    logger.info(f"LEADERBOARD: Found entries with selector: {selector}")
                     break
             
-            # Fallback: find by text content
             if not entries:
                 all_divs = soup.find_all('div')
                 entries = [div for div in all_divs if 'T:' in div.get_text() and 'Y:' in div.get_text()]
-                logger.info(f"LEADERBOARD: Found {len(entries)} entries by text content")
             
             rank = 1
             for entry in entries:
@@ -681,10 +580,9 @@ class LeaderboardParser:
                 })
                 rank += 1
             
-            logger.info(f"LEADERBOARD: Parsed {len(leaderboard)} entries")
             return leaderboard
         except Exception as e:
-            logger.error(f"LEADERBOARD PARSING ERROR: {e}")
+            logger.error(f"BeautifulSoup parsing error: {e}")
             return []
     
     @staticmethod
@@ -695,10 +593,21 @@ class LeaderboardParser:
 
 def fetch_leaderboard() -> Optional[List[Dict]]:
     try:
-        logger.info("LEADERBOARD: Fetching...")
-        
-        # Use exact curl headers
-        headers = CONFIG['leaderboard_headers']
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://adsha.re',
+            'Connection': 'keep-alive',
+            'Referer': 'https://adsha.re/',
+            'Cookie': CONFIG['cookies'],
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin'
+        }
         
         response = requests.post(
             CONFIG['leaderboard_url'],
@@ -707,20 +616,22 @@ def fetch_leaderboard() -> Optional[List[Dict]]:
             verify=True
         )
         
+        logger.info(f"Leaderboard response status: {response.status_code}")
+        
         if response.status_code == 200:
             leaderboard = LeaderboardParser.parse(response.text)
             if leaderboard:
-                logger.info(f"LEADERBOARD: Success - {len(leaderboard)} entries")
+                logger.info(f"Successfully parsed leaderboard with {len(leaderboard)} entries")
                 return leaderboard
             else:
-                logger.error("LEADERBOARD: No entries parsed")
+                logger.error("Failed to parse leaderboard data")
         else:
-            logger.error(f"LEADERBOARD: HTTP {response.status_code}")
+            logger.error(f"Leaderboard request failed with status: {response.status_code}")
         
         return None
             
     except Exception as e:
-        logger.error(f"LEADERBOARD ERROR: {e}")
+        logger.error(f"Network error fetching leaderboard: {e}")
         return None
 
 # ==================== COMPETITION LOGIC ====================
@@ -747,117 +658,36 @@ def get_my_value(my_data: Dict) -> int:
     else:
         return my_data['today_credits'] + my_data['yesterday_credits']
 
-def format_leaderboard_for_telegram(leaderboard: List[Dict]) -> str:
-    """Format leaderboard for Telegram message"""
-    if not leaderboard:
-        return "No leaderboard data available"
-    
-    message = "🏆 <b>LEADERBOARD</b>\n\n"
-    message += "<code>Rank User     Today   Yesterday DB</code>\n"
-    message += "<code>-----------------------------------</code>\n"
-    
-    for entry in leaderboard[:8]:  # Top 8
-        rank = entry['rank']
-        user_id = entry['user_id']
-        today = entry['today_credits']
-        yesterday = entry['yesterday_credits']
-        day_before = entry['day_before_credits']
-        
-        if user_id == CONFIG['my_user_id']:
-            marker = "➤"
-        elif rank == 1:
-            marker = "🥇"
-        elif rank == 2:
-            marker = "🥈"
-        elif rank == 3:
-            marker = "🥉"
-        else:
-            marker = "  "
-        
-        message += f"<code>{marker} {rank:<2} #{user_id:<6} {today:<7} {yesterday:<9} {day_before}</code>\n"
-    
-    return message
-
-def format_status_for_telegram() -> str:
-    """Format competition status for Telegram"""
-    if not state.leaderboard or not state.my_position:
-        return "No competition data available"
-    
-    my_data = None
-    for entry in state.leaderboard:
-        if entry['user_id'] == CONFIG['my_user_id']:
-            my_data = entry
-            break
-    
-    if not my_data:
-        return "User not found in leaderboard"
-    
-    my_value = get_my_value(my_data)
-    
-    message = "🎯 <b>COMPETITION STATUS</b>\n\n"
-    message += f"📊 <b>Position:</b> #{state.my_position}\n"
-    message += f"💰 <b>My Credits Today:</b> {my_value}\n"
-    
-    if state.my_position == 1:
-        target, explanation = calculate_target(state.leaderboard)
-        message += f"🎯 <b>Target:</b> {target} ({explanation})\n"
-        
-        if my_value >= target:
-            message += "✅ <b>TARGET ACHIEVED!</b>\n"
-            message += f"📈 <b>Lead:</b> +{my_value - target}\n"
-        else:
-            gap = target - my_value
-            message += "🏃 <b>CHASING TARGET</b>\n"
-            message += f"📋 <b>Need:</b> {gap} more credits\n"
-            
-            if state.credits_growth_rate > 0 and gap > 0:
-                hours_needed = gap / state.credits_growth_rate
-                completion_time = datetime.now() + timedelta(hours=hours_needed)
-                message += f"⏱️ <b>ETA:</b> {hours_needed:.1f} hours\n"
-                message += f"🕒 <b>Completion:</b> {completion_time.strftime('%H:%M')}\n"
-    else:
-        first_place = state.leaderboard[0]
-        gap = first_place['today_credits'] - my_data['today_credits']
-        message += f"⚠️ <b>NOT #1</b> - Currently #{state.my_position}\n"
-        message += f"🥇 <b>Leader:</b> #{first_place['user_id']}\n"
-        message += f"📉 <b>Gap:</b> {gap} credits\n"
-    
-    if state.last_check_time:
-        message += f"\n🕒 <b>Last Checked:</b> {state.last_check_time.strftime('%H:%M:%S')}"
-    
-    return message
-
-# ==================== BROWSER MANAGEMENT ====================
-
 async def start_browser():
     """Start Firefox browser with Playwright"""
     if state.playwright_browser.state['browser_active']:
+        logger.info("Browser already active")
         return True
     
     try:
-        logger.info("BROWSER: Starting...")
+        logger.info("Starting Firefox browser with Playwright...")
         
         if await state.playwright_browser.setup_playwright():
             # Ensure login
             if await state.playwright_browser.ensure_logged_in():
-                logger.info("BROWSER: Started and logged in successfully")
+                logger.info("Firefox browser started and logged in")
                 return True
             else:
-                logger.error("BROWSER: Started but login failed")
+                logger.error("Firefox started but login failed")
                 return False
         else:
-            logger.error("BROWSER: Setup failed")
+            logger.error("Firefox setup failed")
             return False
             
     except Exception as e:
-        logger.error(f"BROWSER START ERROR: {e}")
+        logger.error(f"Browser start error: {e}")
         return False
 
 async def stop_browser():
     """Stop Firefox browser"""
-    logger.info("BROWSER: Stopping...")
+    logger.info("Stopping Firefox browser...")
     await state.playwright_browser.close()
-    logger.info("BROWSER: Stopped")
+    logger.info("Firefox browser stopped")
 
 # ==================== TELEGRAM FUNCTIONS ====================
 
@@ -873,12 +703,10 @@ def send_telegram_message(message: str):
             'parse_mode': 'HTML'
         }
         response = requests.post(url, data=data, timeout=15)
-        if response.status_code == 200:
-            logger.info("TELEGRAM: Message sent successfully")
-        else:
-            logger.error(f"TELEGRAM: Failed to send message - {response.status_code}")
+        if response.status_code != 200:
+            logger.error(f"Telegram message failed: {response.status_code}")
     except Exception as e:
-        logger.error(f"TELEGRAM MESSAGE FAILED: {e}")
+        logger.error(f"Telegram message failed: {e}")
 
 def send_telegram_photo(photo_path: str, caption: str = ""):
     """Send photo via Telegram"""
@@ -895,14 +723,87 @@ def send_telegram_photo(photo_path: str, caption: str = ""):
         # Clean up screenshot file
         if os.path.exists(photo_path):
             os.remove(photo_path)
-        
-        if response.status_code == 200:
-            logger.info("TELEGRAM: Photo sent successfully")
-        else:
-            logger.error(f"TELEGRAM: Failed to send photo - {response.status_code}")
+        logger.info("Screenshot sent and cleaned up")
         
     except Exception as e:
-        logger.error(f"TELEGRAM PHOTO FAILED: {e}")
+        logger.error(f"Telegram photo failed: {e}")
+
+def format_leaderboard_message(leaderboard):
+    """Format leaderboard for Telegram"""
+    if not leaderboard:
+        return "No leaderboard data available"
+    
+    message = "🏆 <b>LEADERBOARD</b>\n\n"
+    
+    for entry in leaderboard[:8]:  # Top 8
+        rank = entry['rank']
+        user_id = entry['user_id']
+        today = entry['today_credits']
+        yesterday = entry['yesterday_credits']
+        day_before = entry['day_before_credits']
+        
+        if user_id == CONFIG['my_user_id']:
+            prefix = "➤ "
+        elif rank == 1:
+            prefix = "🥇"
+        elif rank == 2:
+            prefix = "🥈"
+        elif rank == 3:
+            prefix = "🥉"
+        else:
+            prefix = "  "
+        
+        message += f"{prefix} {rank}. #{user_id}\n"
+        message += f"   Today: {today} | Yesterday: {yesterday} | DB: {day_before}\n\n"
+    
+    return message
+
+def format_status_message():
+    """Format status message for Telegram"""
+    if not state.leaderboard:
+        return "No competition data available"
+    
+    my_data = None
+    for entry in state.leaderboard:
+        if entry['user_id'] == CONFIG['my_user_id']:
+            my_data = entry
+            break
+    
+    if not my_data:
+        return f"User #{CONFIG['my_user_id']} not in top 10"
+    
+    my_value = get_my_value(my_data)
+    message = f"🎯 <b>COMPETITION STATUS</b>\n\n"
+    message += f"🏅 Position: <b>#{state.my_position}</b>\n"
+    message += f"📊 Today's Credits: <b>{my_value}</b>\n"
+    
+    if state.my_position == 1:
+        target, explanation = calculate_target(state.leaderboard)
+        message += f"🎯 Target: <b>{target}</b> ({explanation})\n"
+        
+        if my_value >= target:
+            message += f"✅ <b>TARGET ACHIEVED!</b>\n"
+            message += f"📈 Lead: +{my_value - target}\n"
+        else:
+            gap = target - my_value
+            message += f"🏃 <b>CHASING TARGET</b>\n"
+            message += f"📈 Need: {gap} more credits\n"
+            
+            if state.credits_growth_rate > 0 and gap > 0:
+                hours_needed = gap / state.credits_growth_rate
+                message += f"⏱️ ETA: {hours_needed:.1f} hours\n"
+    else:
+        first_place = state.leaderboard[0]
+        gap = first_place['today_credits'] - my_data['today_credits']
+        message += f"🥇 Leader: #{first_place['user_id']}\n"
+        message += f"📉 Gap: {gap} credits\n"
+    
+    if state.credits_growth_rate > 0:
+        message += f"📊 Growth Rate: {state.credits_growth_rate:.1f} credits/hour\n"
+    
+    message += f"\n🕒 Last Check: {state.last_check_time.strftime('%H:%M:%S') if state.last_check_time else 'N/A'}"
+    
+    return message
 
 async def handle_telegram_command(command: str, chat_id: int):
     """Handle Telegram bot commands"""
@@ -920,13 +821,13 @@ async def handle_telegram_command(command: str, chat_id: int):
         
     elif command == '/status':
         await check_competition_status()
+        send_telegram_message(format_status_message())
         
     elif command == '/leaderboard':
         if state.leaderboard:
-            message = format_leaderboard_for_telegram(state.leaderboard)
-            send_telegram_message(message)
+            send_telegram_message(format_leaderboard_message(state.leaderboard))
         else:
-            send_telegram_message("❌ <b>No leaderboard data available</b>")
+            send_telegram_message("No leaderboard data available. Use /status first.")
         
     elif command == '/screenshot':
         if state.playwright_browser.state['browser_active']:
@@ -951,18 +852,14 @@ async def handle_telegram_command(command: str, chat_id: int):
             send_telegram_message("✅ <b>Logged IN</b>")
         else:
             send_telegram_message("❌ <b>Not logged in</b>")
-            
+    
     elif command == '/debug':
-        debug_info = f"""
-🔧 <b>DEBUG INFO</b>
-
-🏃 <b>Monitor Running:</b> {state.is_running}
-🌐 <b>Browser Active:</b> {state.playwright_browser.state['browser_active']}
-🔐 <b>Logged In:</b> {state.playwright_browser.state['is_logged_in']}
-📊 <b>Leaderboard Entries:</b> {len(state.leaderboard)}
-🎯 <b>My Position:</b> {state.my_position}
-📈 <b>Growth Rate:</b> {state.credits_growth_rate:.1f}/hour
-        """
+        debug_info = f"🔧 <b>DEBUG INFO</b>\n\n"
+        debug_info += f"Browser Active: {state.playwright_browser.state['browser_active']}\n"
+        debug_info += f"Logged In: {state.playwright_browser.state['is_logged_in']}\n"
+        debug_info += f"Profile Loaded: {state.playwright_browser.state['profile_loaded']}\n"
+        debug_info += f"Monitor Running: {state.is_running}\n"
+        debug_info += f"Leaderboard Entries: {len(state.leaderboard)}\n"
         send_telegram_message(debug_info)
 
 # ==================== TELEGRAM BOT ====================
@@ -986,7 +883,7 @@ async def telegram_bot_loop():
                                 chat_id = update['message']['chat']['id']
                                 await handle_telegram_command(command, chat_id)
         except Exception as e:
-            logger.error(f"TELEGRAM BOT ERROR: {e}")
+            logger.error(f"Telegram bot error: {e}")
         
         await asyncio.sleep(10)
 
@@ -998,11 +895,9 @@ async def check_competition_status():
     current_time = datetime.now()
     state.last_check_time = current_time
     
-    logger.info("COMPETITION: Checking status...")
-    
     leaderboard = fetch_leaderboard()
     if not leaderboard:
-        logger.error("COMPETITION: Failed to fetch leaderboard")
+        logger.error("Failed to fetch leaderboard")
         await start_browser()
         return
     
@@ -1017,7 +912,7 @@ async def check_competition_status():
             break
     
     if not my_data:
-        logger.error(f"COMPETITION: User #{CONFIG['my_user_id']} not in top 10!")
+        logger.error(f"User #{CONFIG['my_user_id']} not in top 10!")
         await start_browser()
         return
     
@@ -1039,7 +934,7 @@ async def check_competition_status():
     state.last_my_credits = my_value
     state.last_credits_time = current_time
     
-    # Competition logic
+    # Competition logic - SINGLE DECISION
     if state.my_position != 1:
         if not state.playwright_browser.state['browser_active']:
             await start_browser()
@@ -1057,19 +952,16 @@ async def check_competition_status():
                 await start_browser()
             state.target_achieved = False
     
-    # Send status to Telegram
-    status_message = format_status_for_telegram()
-    send_telegram_message(status_message)
-    
-    logger.info(f"COMPETITION: Check completed - Position #{state.my_position}")
+    # Log status
+    logger.info(f"Position: #{state.my_position}, Today: {my_value}, Target: {state.current_target if state.my_position == 1 else 'N/A'}")
 
 # ==================== MAIN LOOP ====================
 
 async def main_loop():
-    logger.info("🚀 AdShare Monitor v7.2 - Railway Edition STARTED")
-    logger.info("Using Playwright Firefox with enhanced profile management")
+    logger.info("AdShare Monitor v7.1 - Railway Production Edition STARTED")
+    logger.info("Using Playwright Firefox with profile management")
     
-    send_telegram_message("🚀 <b>AdShare Monitor v7.2 Started!</b>\nEnhanced Firefox 144.0 Edition")
+    send_telegram_message("🚀 <b>AdShare Monitor v7.1 Started!</b>\nPlaywright Firefox Edition on Railway")
     
     if CONFIG['auto_start']:
         state.is_running = True
@@ -1094,7 +986,7 @@ async def main_loop():
             await stop_browser()
             break
         except Exception as e:
-            logger.error(f"MAIN LOOP ERROR: {e}")
+            logger.error(f"Main loop error: {e}")
             await asyncio.sleep(30)
 
 def signal_handler(sig, frame):
