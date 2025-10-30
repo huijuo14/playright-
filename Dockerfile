@@ -15,4 +15,4 @@ COPY . .
 RUN mkdir -p /root/.mozilla/firefox
 
 # Start the application
-CMD ["python", "adshare_monitor_playwright.py"]
+CMD ["python", "app.py"]
