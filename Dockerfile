@@ -1,55 +1,30 @@
-FROM ubuntu:22.04
-
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TERM=xterm
-ENV DISPLAY=:99
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
 WORKDIR /app
 
-# Install system dependencies
+# Install Firefox 144.0 manually (latest stable)
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
-    gnupg \
+    libgtk-3-0 \
     libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxcb1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libxcomposite1 \
-    libx11-xcb1 \
-    libxkbcommon0 \
-    libpango-1.0-0 \
-    libcairo2 \
+    libxss1 \
     libasound2 \
-    fonts-liberation \
-    xvfb \
-    python3 \
-    python3-pip \
-    python3-venv \
+    libdbus-glib-1-2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install latest Firefox from Mozilla PPA
-RUN wget -q -O- https://packages.mozilla.org/apt/mozilla-archive-keyring.gpg | gpg --dearmor | tee /etc/apt/trusted.gpg.d/mozilla.gpg > /dev/null
-RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/mozilla.gpg] https://packages.mozilla.org/apt mozilla main" | tee /etc/apt/sources.list.d/mozilla.list
-RUN echo "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000" | tee /etc/apt/preferences.d/mozilla
-RUN apt-get update && apt-get install -y firefox && rm -rf /var/lib/apt/lists/*
+# Download and install Firefox 144.0
+RUN wget -O /tmp/firefox.tar.bz2 "https://download-installer.cdn.mozilla.net/pub/firefox/releases/144.0/linux-x86_64/en-US/firefox-144.0.tar.bz2" \
+    && tar -xjf /tmp/firefox.tar.bz2 -C /opt \
+    && ln -sf /opt/firefox/firefox /usr/local/bin/firefox \
+    && rm /tmp/firefox.tar.bz2
+
+# Verify Firefox installation
+RUN firefox --version
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Install Playwright with system Firefox
-RUN playwright install firefox
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -58,4 +33,4 @@ COPY . .
 RUN mkdir -p /root/.mozilla/firefox
 
 # Start the application
-CMD ["python3", "app.py"]
+CMD ["python", "app.py"]
