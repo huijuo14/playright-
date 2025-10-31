@@ -7,12 +7,12 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Install geckodriver for Selenium
-RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz \
-    && tar -xzf geckodriver-v0.33.0-linux64.tar.gz \
+# Install correct geckodriver version for Firefox 140+
+RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.34.0/geckodriver-v0.34.0-linux64.tar.gz \
+    && tar -xzf geckodriver-v0.34.0-linux64.tar.gz \
     && chmod +x geckodriver \
     && mv geckodriver /usr/local/bin/ \
-    && rm geckodriver-v0.33.0-linux64.tar.gz
+    && rm geckodriver-v0.34.0-linux64.tar.gz
 
 # Set up working directory
 WORKDIR /app
