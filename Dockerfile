@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y \
     firefox-esr \
     wget \
     xvfb \
-    scrot \  # Add screenshot tool
+    scrot \
     && rm -rf /var/lib/apt/lists/*
 
 # Install correct geckodriver version for Firefox 140+
@@ -29,4 +29,4 @@ COPY . .
 RUN mkdir -p /app/firefox_profile /app/extensions /app/screenshots
 
 # Run the application
-CMD ["python", "main.py"]
+CMD ["python", "app.py"]
