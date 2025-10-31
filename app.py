@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v6.0 - Combined Solution
-Browser setup + userscript installation + monitoring
+AdShare Monitor v6.0 - Selenium Firefox Edition
+Simple and reliable browser automation
 """
 
 import subprocess
@@ -16,7 +16,6 @@ import sys
 import json
 from pathlib import Path
 import urllib.request
-import cv2
 from io import BytesIO
 
 try:
@@ -34,7 +33,7 @@ except ImportError:
     print("Installing required packages...")
     subprocess.run([sys.executable, "-m", "pip", "install", 
                    "selenium", "requests", "beautifulsoup4", "pytz", 
-                   "opencv-python-headless", "Pillow"], check=True)
+                   "Pillow"], check=True)
     import requests
     from bs4 import BeautifulSoup
     import pytz
@@ -70,7 +69,6 @@ CONFIG = {
     
     # Technical Settings
     'leaderboard_url': 'https://adsha.re/ten',
-    'cookies': '',
     'timezone': 'Asia/Kolkata',
     
     # Profile paths
@@ -90,7 +88,7 @@ EXTENSIONS = {
         "name": "Violentmonkey"
     },
     "ublock": {
-        "xpi_url": "https://addons.mozilla.org/firefox/downloads/file/4598854/ublock_origin-1.67.0.xpi",
+        "xpi_url": "https://addons.mozilla.org/firefox/downloads/file/4598854/ublock_origin-1.67.0.xpi", 
         "xpi_file": "ublock_origin.xpi",
         "name": "uBlock Origin"
     }
@@ -262,7 +260,7 @@ def install_userscript_properly(driver):
 
 def setup_browser():
     """Setup Firefox browser with extensions and userscript"""
-    logger.info("Setting up browser...")
+    logger.info("Setting up Firefox browser with Selenium...")
     
     # Clean profile directory
     if os.path.exists(CONFIG['profile_dir']):
@@ -284,7 +282,12 @@ def setup_browser():
     options.set_preference("extensions.enabledScopes", 15)
     
     # Create driver
-    driver = webdriver.Firefox(options=options)
+    try:
+        driver = webdriver.Firefox(options=options)
+        logger.info("Firefox browser started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start Firefox: {e}")
+        return None
     
     try:
         # Install extensions
@@ -518,6 +521,7 @@ class LeaderboardParser:
             
             return leaderboard
         except Exception as e:
+            logger.error(f"Error parsing leaderboard: {e}")
             return []
     
     @staticmethod
@@ -529,9 +533,8 @@ class LeaderboardParser:
 def fetch_leaderboard() -> Optional[List[Dict]]:
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Cookie': CONFIG['cookies']
         }
         
         response = requests.post(
@@ -543,11 +546,16 @@ def fetch_leaderboard() -> Optional[List[Dict]]:
         if response.status_code == 200:
             leaderboard = LeaderboardParser.parse(response.text)
             if leaderboard:
+                logger.info(f"Successfully parsed {len(leaderboard)} leaderboard entries")
                 return leaderboard
+            else:
+                logger.warning("Leaderboard parsed but empty")
+        else:
+            logger.error(f"HTTP {response.status_code} fetching leaderboard")
         return None
             
     except Exception as e:
-        logger.error(f"Network error: {e}")
+        logger.error(f"Network error fetching leaderboard: {e}")
         return None
 
 def calculate_target(leaderboard: List[Dict]) -> Tuple[int, str]:
@@ -633,6 +641,9 @@ def check_competition_status():
     if state.my_position != 1:
         status_message = f"📉 Currently #{state.my_position}, chasing #1"
         state.target_achieved = False
+        # Ensure browser is running if not #1
+        if state.driver and not state.browser_active:
+            state.browser_active = True
     else:
         target, explanation = calculate_target(state.leaderboard)
         state.current_target = target
@@ -640,10 +651,16 @@ def check_competition_status():
         if my_value >= target:
             status_message = f"✅ TARGET ACHIEVED! Position #1 secured"
             state.target_achieved = True
+            # Can stop browser if target achieved
+            if state.driver:
+                state.browser_active = False
         else:
             gap = target - my_value
             status_message = f"🏃 CHASING TARGET - Need {gap} more credits"
             state.target_achieved = False
+            # Ensure browser is running
+            if state.driver:
+                state.browser_active = True
     
     # Send status to Telegram
     full_message = f"""
@@ -659,9 +676,12 @@ def check_competition_status():
     
     # Take screenshot if browser is active
     if state.driver and state.browser_active:
-        screenshot_data = take_screenshot(state.driver, "status_check", "Competition Status")
-        if screenshot_data:
-            send_telegram_message("📸 Current browser state:", screenshot_data)
+        try:
+            screenshot_data = take_screenshot(state.driver, "status_check", "Competition Status")
+            if screenshot_data:
+                send_telegram_message("📸 Current browser state:", screenshot_data)
+        except Exception as e:
+            logger.error(f"Screenshot failed: {e}")
 
 def telegram_bot_loop():
     """Handle Telegram commands"""
@@ -707,6 +727,14 @@ def telegram_bot_loop():
                                             send_telegram_message("✅ Login successful!")
                                         else:
                                             send_telegram_message("❌ Login failed")
+                                elif command == '/restart_browser':
+                                    if state.driver:
+                                        state.driver.quit()
+                                        state.driver = setup_browser()
+                                        if state.driver:
+                                            send_telegram_message("✅ Browser restarted!")
+                                        else:
+                                            send_telegram_message("❌ Browser restart failed")
         except Exception as e:
             logger.error(f"Telegram bot error: {e}")
         
@@ -740,6 +768,7 @@ def main_loop():
     # Initialize system
     if not initialize_system():
         logger.error("System initialization failed!")
+        send_telegram_message("❌ System initialization failed!")
         return
     
     send_telegram_message("🚀 AdShare Monitor Started!")
@@ -758,7 +787,7 @@ def main_loop():
                     check_competition_status()
                     last_check = current_time
                 
-                # Keep browser alive by refreshing periodically
+                # Keep browser alive by refreshing periodically (every 30 minutes)
                 if state.driver and state.browser_active:
                     try:
                         current_url = state.driver.current_url
@@ -766,7 +795,14 @@ def main_loop():
                             state.driver.get(CONFIG['browser_url'])
                             time.sleep(5)
                     except:
-                        pass
+                        # Browser might be dead, try to restart
+                        try:
+                            state.driver.quit()
+                        except:
+                            pass
+                        state.driver = setup_browser()
+                        if state.driver:
+                            force_login(state.driver)
                 
             time.sleep(30)
                 
