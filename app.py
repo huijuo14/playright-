@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v7.0 - Clean & Fixed
+AdShare Monitor v9.0 - Optimized (Minimal Selenium Usage)
 """
 
 import subprocess
@@ -59,7 +59,7 @@ CONFIG = {
     # Competition Settings
     'leaderboard_check_interval': 600,  # 10 minutes
     'safety_margin': 250,
-    'competition_strategy': 'today_only',  # 'today_only' or 'combined'
+    'competition_strategy': 'today_only',
     'my_user_id': '4242',
     
     # Browser Settings
@@ -93,7 +93,7 @@ EXTENSIONS = {
     }
 }
 
-USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/551435-very-smart-symbol-game-auto-solver-pro-v3-4"
+USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554286-login-smart-symbol-game-auto-solver-pro-v3-4-with-auto-login/"
 
 # ==================== LOGGING SETUP ====================
 
@@ -113,7 +113,7 @@ class MonitorState:
     def __init__(self):
         self.is_running = False
         self.browser_active = False
-        self.driver = None
+        self.firefox_process = None
         self.leaderboard = []
         self.my_position = None
         self.target_achieved = False
@@ -127,10 +127,11 @@ class MonitorState:
         self.is_logged_in = False
         self.extensions_installed = False
         self.competitor_history = {}
+        self.profile_initialized = False
 
 state = MonitorState()
 
-# ==================== BROWSER SETUP & USERSCRIPT INSTALLATION ====================
+# ==================== SELENIUM SETUP (ONLY FOR FIRST TIME) ====================
 
 def download_files():
     """Download extensions"""
@@ -146,22 +147,6 @@ def download_files():
         paths[ext_id] = filepath
     
     return paths
-
-def take_screenshot(driver, name, description=""):
-    """Take screenshot and return image data for Telegram"""
-    try:
-        os.makedirs(CONFIG['screenshots_dir'], exist_ok=True)
-        path = f"{CONFIG['screenshots_dir']}/{name}.png"
-        driver.save_screenshot(path)
-        
-        with open(path, 'rb') as f:
-            image_data = f.read()
-        
-        logger.info(f"Screenshot: {description or name}")
-        return image_data
-    except Exception as e:
-        logger.error(f"Screenshot error: {e}")
-        return None
 
 def install_userscript_properly(driver):
     """EXACT SAME METHOD from working script"""
@@ -268,17 +253,24 @@ def install_userscript_properly(driver):
                 driver.switch_to.window(driver.window_handles[0])
         return False
 
-def setup_browser_with_proper_workflow():
-    """Setup browser using the EXACT working workflow"""
-    logger.info("Setting up browser with proper workflow...")
+def initialize_profile_with_selenium():
+    """Use Selenium ONLY ONCE to install extensions and userscript"""
+    if state.profile_initialized:
+        logger.info("Profile already initialized")
+        return True
+        
+    logger.info("🚀 INITIALIZING PROFILE WITH SELENIUM (ONE-TIME SETUP)")
     
+    # Clean and create profile directory
     if os.path.exists(CONFIG['profile_dir']):
         import shutil
         shutil.rmtree(CONFIG['profile_dir'])
     os.makedirs(CONFIG['profile_dir'])
     
+    # Download extensions
     extension_paths = download_files()
     
+    # Firefox options for Selenium
     options = Options()
     if CONFIG['headless_mode']:
         options.add_argument("--headless")
@@ -288,193 +280,158 @@ def setup_browser_with_proper_workflow():
     options.set_preference("extensions.autoDisableScopes", 0)
     options.set_preference("extensions.enabledScopes", 15)
     
-    # SESSION 1: Install Extensions
-    logger.info("SESSION 1: Installing Extensions")
+    # STEP 1: Install Extensions
+    logger.info("📦 STEP 1: Installing Extensions with Selenium...")
     
-    driver = webdriver.Firefox(options=options)
-    driver.set_window_size(1400, 1000)
-    
+    driver = None
     try:
+        driver = webdriver.Firefox(options=options)
+        driver.set_window_size(1400, 1000)
+        
         for ext_id, ext_path in extension_paths.items():
             abs_path = os.path.abspath(ext_path)
             driver.install_addon(abs_path, temporary=False)
-            logger.info(f"Installed {EXTENSIONS[ext_id]['name']}")
+            logger.info(f"✅ Installed {EXTENSIONS[ext_id]['name']}")
             time.sleep(3)
         
-        logger.info("Restarting browser...")
+        logger.info("🔄 Restarting browser to load extensions...")
         driver.quit()
+        driver = None
         
     except Exception as e:
-        logger.error(f"Error: {e}")
-        driver.quit()
-        return None
+        logger.error(f"❌ Error installing extensions: {e}")
+        if driver:
+            driver.quit()
+        return False
     
-    # SESSION 2: Install Userscript
-    logger.info("SESSION 2: Installing Userscript (After Restart)")
+    # STEP 2: Install Userscript
+    logger.info("📝 STEP 2: Installing Userscript with Selenium...")
     
     time.sleep(3)
-    driver = webdriver.Firefox(options=options)
-    driver.set_window_size(1400, 1000)
-    
     try:
-        logger.info("Waiting for extensions to load...")
+        driver = webdriver.Firefox(options=options)
+        driver.set_window_size(1400, 1000)
+        
+        logger.info("⏳ Waiting for extensions to load...")
         time.sleep(10)
         
+        # Verify extensions loaded
         driver.get("about:addons")
         time.sleep(3)
         
         page_source = driver.page_source.lower()
         if "violentmonkey" in page_source:
-            logger.info("Violentmonkey is loaded!")
+            logger.info("✅ Violentmonkey is loaded!")
         else:
-            logger.warning("Violentmonkey not detected in addons page")
+            logger.warning("⚠️ Violentmonkey not detected in addons page")
         
+        # Install userscript
         success = install_userscript_properly(driver)
         
         if success:
-            logger.info("Installation completed!")
+            logger.info("✅ Userscript installation completed!")
+        else:
+            logger.error("❌ Userscript installation failed")
         
-        logger.info("Browser setup complete!")
-        return driver
+        # Clean up Selenium
+        driver.quit()
+        driver = None
+        
+        state.profile_initialized = True
+        state.extensions_installed = True
+        logger.info("🎉 PROFILE INITIALIZATION COMPLETE! Selenium will not be used again.")
+        return True
         
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"❌ Error installing userscript: {e}")
         if driver:
             driver.quit()
-        return None
-
-def force_login(driver):
-    """EXACT SAME LOGIN FUNCTION"""
-    try:
-        logger.info("Attempting login...")
-        
-        login_url = "https://adsha.re/login"
-        driver.get(login_url)
-        
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-        
-        time.sleep(3)
-        
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, 'html.parser')
-        
-        form = soup.find('form', {'name': 'login'})
-        if not form:
-            logger.error("No login form found")
-            return False
-        
-        password_field_name = None
-        for field in form.find_all('input'):
-            field_name = field.get('name', '')
-            field_value = field.get('value', '')
-            
-            if field_value == 'Password' and field_name != 'mail' and field_name:
-                password_field_name = field_name
-                break
-        
-        if not password_field_name:
-            logger.error("No password field found")
-            return False
-        
-        logger.info(f"Password field: {password_field_name}")
-        
-        email_selectors = [
-            "input[name='mail']",
-            "input[type='email']",
-            "input[placeholder*='email' i]",
-        ]
-        
-        email_filled = False
-        for selector in email_selectors:
-            try:
-                email_field = driver.find_element(By.CSS_SELECTOR, selector)
-                email_field.clear()
-                email_field.send_keys(CONFIG['email'])
-                logger.info("Email entered successfully")
-                email_filled = True
-                break
-            except:
-                continue
-        
-        if not email_filled:
-            logger.error("Could not fill email field")
-            return False
-        
-        time.sleep(2)
-        
-        password_selectors = [
-            f"input[name='{password_field_name}']",
-            "input[type='password']",
-            "input[placeholder*='password' i]",
-        ]
-        
-        password_filled = False
-        for selector in password_selectors:
-            try:
-                password_field = driver.find_element(By.CSS_SELECTOR, selector)
-                password_field.clear()
-                password_field.send_keys(CONFIG['password'])
-                logger.info("Password entered successfully")
-                password_filled = True
-                break
-            except:
-                continue
-        
-        if not password_filled:
-            return False
-        
-        time.sleep(2)
-        
-        login_selectors = [
-            "button[type='submit']",
-            "input[type='submit']",
-            "button",
-            "input[value*='Login']",
-        ]
-        
-        login_clicked = False
-        for selector in login_selectors:
-            try:
-                login_btn = driver.find_element(By.CSS_SELECTOR, selector)
-                if login_btn.is_displayed() and login_btn.is_enabled():
-                    login_btn.click()
-                    logger.info("Login button clicked successfully")
-                    login_clicked = True
-                    break
-            except:
-                continue
-        
-        if not login_clicked:
-            try:
-                form_element = driver.find_element(By.CSS_SELECTOR, "form[name='login']")
-                form_element.submit()
-                logger.info("Form submitted successfully")
-                login_clicked = True
-            except:
-                pass
-        
-        time.sleep(8)
-        
-        driver.get("https://adsha.re/surf")
-        time.sleep(5)
-        
-        current_url = driver.current_url
-        if "surf" in current_url or "game" in current_url.lower():
-            logger.info("Login successful!")
-            state.is_logged_in = True
-            send_telegram_message("✅ Login Successful!")
-            return True
-        else:
-            logger.error("Login failed")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Login error: {e}")
         return False
 
-# ==================== FIXED LEADERBOARD PARSING ====================
+# ==================== LIGHTWEIGHT FIREFOX MANAGEMENT ====================
+
+def start_firefox_lightweight():
+    """Start Firefox without Selenium (lightweight)"""
+    if not state.profile_initialized:
+        logger.info("Profile not initialized, running one-time setup...")
+        if not initialize_profile_with_selenium():
+            return False
+    
+    logger.info("🚀 Starting Firefox in lightweight mode...")
+    
+    try:
+        # Start Firefox directly without Selenium
+        firefox_cmd = [
+            'firefox',
+            '-profile', CONFIG['profile_dir'],
+            '-width', '1400',
+            '-height', '1000',
+            '-new-tab', CONFIG['browser_url']
+        ]
+        
+        if CONFIG['headless_mode']:
+            # Use XVFB for headless mode
+            display_cmd = ['Xvfb', ':99', '-screen', '0', '1400x1000x24', '-ac']
+            display_process = subprocess.Popen(display_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(2)
+            
+            os.environ['DISPLAY'] = ':99'
+            firefox_process = subprocess.Popen(firefox_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            firefox_process = subprocess.Popen(firefox_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        state.firefox_process = firefox_process
+        state.browser_active = True
+        
+        logger.info("✅ Firefox started successfully in lightweight mode!")
+        logger.info("💡 Note: Login will be handled by userscript automatically")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start Firefox: {e}")
+        return False
+
+def stop_firefox_lightweight():
+    """Stop Firefox process"""
+    if state.firefox_process:
+        try:
+            state.firefox_process.terminate()
+            state.firefox_process.wait(timeout=10)
+            logger.info("✅ Firefox stopped")
+        except:
+            try:
+                state.firefox_process.kill()
+                logger.info("✅ Firefox force stopped")
+            except:
+                pass
+        state.firefox_process = None
+    
+    state.browser_active = False
+
+def take_screenshot_lightweight():
+    """Take screenshot using external tool (if available)"""
+    try:
+        os.makedirs(CONFIG['screenshots_dir'], exist_ok=True)
+        path = f"{CONFIG['screenshots_dir']}/screenshot_{int(time.time())}.png"
+        
+        # Try to use scrot or other screenshot tool
+        screenshot_cmd = ['scrot', path]
+        result = subprocess.run(screenshot_cmd, capture_output=True, timeout=10)
+        
+        if result.returncode == 0 and os.path.exists(path):
+            with open(path, 'rb') as f:
+                image_data = f.read()
+            logger.info("✅ Screenshot taken")
+            return image_data
+        else:
+            logger.warning("⚠️ Could not take screenshot - scrot not available")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Screenshot error: {e}")
+        return None
+
+# ==================== LEADERBOARD & COMPETITION LOGIC ====================
 
 class LeaderboardParser:
     @staticmethod
@@ -483,11 +440,9 @@ class LeaderboardParser:
             soup = BeautifulSoup(html, 'html.parser')
             leaderboard = []
             
-            # Find all divs with leaderboard entries
             entries = soup.find_all('div', style=lambda x: x and 'width:250px' in x and 'margin:5px auto' in x)
             
             if not entries:
-                # Fallback: find any divs that contain leaderboard data
                 all_divs = soup.find_all('div')
                 entries = [div for div in all_divs if 'T:' in div.get_text() and 'Y:' in div.get_text()]
             
@@ -495,14 +450,12 @@ class LeaderboardParser:
             for entry in entries:
                 text = entry.get_text(strip=True)
                 
-                # Extract user ID - look for # followed by numbers
                 user_match = re.search(r'#(\d+)', text)
                 if not user_match:
                     continue
                 
                 user_id = user_match.group(1)
                 
-                # Extract credits using the exact pattern from the curl response
                 today_match = re.search(r'T:\s*(\d+(?:,\d+)*)', text)
                 yesterday_match = re.search(r'Y:\s*(\d+(?:,\d+)*)', text)
                 db_match = re.search(r'DB:\s*(\d+(?:,\d+)*)', text)
@@ -511,7 +464,6 @@ class LeaderboardParser:
                 yesterday = int(yesterday_match.group(1).replace(',', '')) if yesterday_match else 0
                 day_before = int(db_match.group(1).replace(',', '')) if db_match else 0
                 
-                # Total surfed (Today + Yesterday + Day Before)
                 total = today + yesterday + day_before
                 
                 leaderboard.append({
@@ -524,14 +476,14 @@ class LeaderboardParser:
                 })
                 rank += 1
             
-            logger.info(f"Successfully parsed {len(leaderboard)} leaderboard entries")
+            logger.info(f"✅ Parsed {len(leaderboard)} leaderboard entries")
             return leaderboard
         except Exception as e:
-            logger.error(f"Error parsing leaderboard: {e}")
+            logger.error(f"❌ Error parsing leaderboard: {e}")
             return []
 
 def fetch_leaderboard_fixed() -> Optional[List[Dict]]:
-    """Fixed leaderboard fetching with exact headers from curl"""
+    """Fetch leaderboard with exact headers"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
@@ -550,7 +502,6 @@ def fetch_leaderboard_fixed() -> Optional[List[Dict]]:
             'Cookie': 'adshare_e=bonna.b.o.rre.z%40gmail.com; adshare_s=e4dc9d210bb38a86cd360253a82feb2cc6ed84f5ddf778be89484fb476998e0dfc31280c575a38a2467067cd6ec1d6ff7e25aa46dedd6ea454831df26365dfc2; adshare_d=20251025; adshare_h=https%3A%2F%2Fadsha.re%2Faffiliates'
         }
         
-        logger.info("Fetching leaderboard...")
         response = requests.post(
             CONFIG['leaderboard_url'],
             headers=headers,
@@ -561,63 +512,11 @@ def fetch_leaderboard_fixed() -> Optional[List[Dict]]:
             leaderboard = LeaderboardParser.parse_with_beautifulsoup(response.text)
             if leaderboard:
                 return leaderboard
-            else:
-                logger.warning("Leaderboard parsed but empty")
-        else:
-            logger.error(f"HTTP {response.status_code} fetching leaderboard")
-            
         return None
             
     except Exception as e:
-        logger.error(f"Network error fetching leaderboard: {e}")
+        logger.error(f"❌ Network error fetching leaderboard: {e}")
         return None
-
-# ==================== PERFORMANCE METRICS ====================
-
-def calculate_performance_metrics(leaderboard: List[Dict]) -> Dict:
-    """Calculate performance metrics for me and competitors"""
-    metrics = {
-        'my_speed': state.credits_growth_rate,
-        'competitor_speeds': {}
-    }
-    
-    current_time = datetime.now()
-    
-    # Track competitor speeds
-    for entry in leaderboard[:3]:  # Top 3 competitors
-        user_id = entry['user_id']
-        today_credits = entry['today_credits']
-        
-        if user_id not in state.competitor_history:
-            state.competitor_history[user_id] = []
-        
-        # Add current data point
-        state.competitor_history[user_id].append({
-            'time': current_time,
-            'credits': today_credits,
-            'rank': entry['rank']
-        })
-        
-        # Keep only last 6 data points (1 hour if checking every 10 minutes)
-        state.competitor_history[user_id] = state.competitor_history[user_id][-6:]
-        
-        # Calculate speed if we have enough data
-        if len(state.competitor_history[user_id]) >= 2:
-            history = state.competitor_history[user_id]
-            time_diff = (history[-1]['time'] - history[0]['time']).total_seconds() / 3600.0
-            credits_diff = history[-1]['credits'] - history[0]['credits']
-            
-            if time_diff > 0:
-                speed = credits_diff / time_diff
-                metrics['competitor_speeds'][user_id] = {
-                    'speed': speed,
-                    'rank': entry['rank'],
-                    'last_active': history[-1]['time']
-                }
-    
-    return metrics
-
-# ==================== COMPETITION LOGIC ====================
 
 def calculate_target(leaderboard: List[Dict]) -> Tuple[int, str]:
     if len(leaderboard) < 2:
@@ -629,23 +528,39 @@ def calculate_target(leaderboard: List[Dict]) -> Tuple[int, str]:
         target = second_place['today_credits'] + state.safety_margin
         explanation = f"2nd today ({second_place['today_credits']}) + {state.safety_margin}"
     else:
-        # For combined strategy, we still only use today's value for our target
-        # but we compare against second place's today value
-        target = second_place['today_credits'] + state.safety_margin
-        explanation = f"2nd today ({second_place['today_credits']}) + {state.safety_margin} (combined mode)"
+        second_combined = second_place['today_credits'] + second_place['yesterday_credits']
+        target = second_combined
+        explanation = f"2nd combined today+yesterday ({second_combined})"
     
     return target, explanation
 
 def get_my_value(my_data: Dict) -> int:
-    """Always use today's credits for our value"""
     return my_data['today_credits']
+
+def should_stop_browser(leaderboard: List[Dict]) -> bool:
+    if state.my_position != 1:
+        return False
+    
+    my_data = None
+    for entry in leaderboard:
+        if entry['user_id'] == CONFIG['my_user_id']:
+            my_data = entry
+            break
+    
+    if not my_data:
+        return False
+    
+    my_today = get_my_value(my_data)
+    target, _ = calculate_target(leaderboard)
+    
+    return my_today >= target
 
 def send_telegram_message(message: str, image_data=None):
     if not CONFIG.get('chat_id'):
         return
     
     try:
-        url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage"
+        url = f"https://api.telegram.org/bot{CONFIG['telefox_token']}/sendMessage"
         data = {'chat_id': CONFIG['chat_id'], 'text': message, 'parse_mode': 'HTML'}
         requests.post(url, data=data, timeout=15)
         
@@ -656,16 +571,16 @@ def send_telegram_message(message: str, image_data=None):
             requests.post(url, files=files, data=data, timeout=15)
             
     except Exception as e:
-        logger.error(f"Telegram error: {e}")
+        logger.error(f"❌ Telegram error: {e}")
 
 def check_competition_status():
-    """Single competition check"""
+    """Competition check without Selenium"""
     current_time = datetime.now()
     state.last_check_time = current_time
     
     leaderboard = fetch_leaderboard_fixed()
     if not leaderboard:
-        logger.error("Failed to fetch leaderboard")
+        logger.error("❌ Failed to fetch leaderboard")
         return
     
     state.leaderboard = leaderboard
@@ -679,7 +594,7 @@ def check_competition_status():
             break
     
     if not my_data:
-        logger.error(f"User #{CONFIG['my_user_id']} not in top 10!")
+        logger.error(f"❌ User #{CONFIG['my_user_id']} not in top 10!")
         return
     
     my_value = get_my_value(my_data)
@@ -695,52 +610,45 @@ def check_competition_status():
     state.last_my_credits = my_value
     state.last_credits_time = current_time
     
-    # Calculate performance metrics
-    metrics = calculate_performance_metrics(leaderboard)
+    # Browser control logic
+    should_stop = should_stop_browser(leaderboard)
     
-    # Competition logic
+    if should_stop and state.browser_active:
+        logger.info("🎯 Target achieved, stopping Firefox...")
+        stop_firefox_lightweight()
+        send_telegram_message("🎯 <b>TARGET ACHIEVED!</b> Firefox stopped.")
+    elif not should_stop and not state.browser_active and state.is_running:
+        logger.info("🏃 Need to chase target, starting Firefox...")
+        start_firefox_lightweight()
+    
+    # Competition status
+    target, explanation = calculate_target(leaderboard)
+    state.current_target = target
+    
     status_message = ""
     if state.my_position != 1:
         first_place = leaderboard[0]
         gap = first_place['today_credits'] - my_value
         status_message = f"📉 Currently #{state.my_position}, chasing #1 (gap: {gap})"
-        state.target_achieved = False
     else:
-        target, explanation = calculate_target(leaderboard)
-        state.current_target = target
-        
         if my_value >= target:
             status_message = f"✅ TARGET ACHIEVED! Position #1 secured"
-            state.target_achieved = True
         else:
             gap = target - my_value
             status_message = f"🏃 CHASING TARGET - Need {gap} more credits"
-            state.target_achieved = False
     
-    # Build performance report
-    performance_report = ""
-    if state.credits_growth_rate > 0:
-        performance_report += f"📈 My Speed: {state.credits_growth_rate:.1f} surf/hour\n"
-    
-    # Add competitor speeds
-    if metrics['competitor_speeds']:
-        performance_report += "🏁 Competitor Speeds:\n"
-        for user_id, data in metrics['competitor_speeds'].items():
-            if data['speed'] > 0:
-                time_ago = (current_time - data['last_active']).total_seconds() / 60
-                performance_report += f"  #{user_id} (rank {data['rank']}): {data['speed']:.1f}/hour"
-                if time_ago < 60:  # Active in last hour
-                    performance_report += f" (active {time_ago:.0f}m ago)\n"
-                else:
-                    performance_report += "\n"
+    # Performance report
+    performance_report = f"📈 My Speed: {state.credits_growth_rate:.1f} surf/hour\n"
+    performance_report += f"🖥️ Firefox: {'RUNNING' if state.browser_active else 'STOPPED'}\n"
+    performance_report += f"💾 Mode: {'LIGHTWEIGHT' if state.profile_initialized else 'SETUP'}"
     
     # Send status to Telegram
     full_message = f"""
 🔄 <b>Competition Update</b>
 🏆 Position: <b>#{state.my_position}</b>
 📊 My Credits Today: <b>{my_value}</b>
-🎯 Strategy: <b>{state.strategy}</b>
-🛡️ Safety Margin: <b>{state.safety_margin}</b>
+🎯 Target: <b>{target}</b> ({explanation})
+🎯 Strategy: <b>{state.strategy.upper()}</b>
 
 {status_message}
 
@@ -750,7 +658,7 @@ def check_competition_status():
     send_telegram_message(full_message)
 
 def telegram_bot_loop():
-    """Handle Telegram commands"""
+    """Telegram bot without Selenium dependencies"""
     last_update_id = 0
     
     while True:
@@ -772,34 +680,28 @@ def telegram_bot_loop():
                                 if command == '/start':
                                     state.is_running = True
                                     send_telegram_message("✅ Monitor STARTED!")
+                                    if not state.browser_active:
+                                        start_firefox_lightweight()
                                     check_competition_status()
                                 elif command == '/stop':
                                     state.is_running = False
+                                    stop_firefox_lightweight()
                                     send_telegram_message("⏹️ Monitor STOPPED!")
                                 elif command == '/status':
                                     check_competition_status()
                                 elif command == '/screenshot':
-                                    if state.driver and state.browser_active:
-                                        screenshot_data = take_screenshot(state.driver, "telegram_request", "Telegram Screenshot")
-                                        if screenshot_data:
-                                            send_telegram_message("📸 Browser screenshot:", screenshot_data)
-                                        else:
-                                            send_telegram_message("❌ Could not take screenshot")
+                                    screenshot_data = take_screenshot_lightweight()
+                                    if screenshot_data:
+                                        send_telegram_message("📸 Firefox screenshot:", screenshot_data)
                                     else:
-                                        send_telegram_message("❌ Browser not active")
-                                elif command == '/login':
-                                    if state.driver:
-                                        if force_login(state.driver):
-                                            send_telegram_message("✅ Login successful!")
-                                        else:
-                                            send_telegram_message("❌ Login failed")
+                                        send_telegram_message("❌ Could not take screenshot")
                                 elif command == '/strategy_today':
                                     state.strategy = 'today_only'
-                                    send_telegram_message("🎯 Strategy set to: TODAY ONLY")
+                                    send_telegram_message("🎯 Strategy set to: TODAY ONLY\nTarget = 2nd today + safety margin")
                                     check_competition_status()
                                 elif command == '/strategy_combined':
                                     state.strategy = 'combined'
-                                    send_telegram_message("🎯 Strategy set to: COMBINED")
+                                    send_telegram_message("🎯 Strategy set to: COMBINED\nTarget = 2nd (today + yesterday)")
                                     check_competition_status()
                                 elif command.startswith('/margin '):
                                     try:
@@ -809,71 +711,67 @@ def telegram_bot_loop():
                                         check_competition_status()
                                     except:
                                         send_telegram_message("❌ Usage: /margin <number>")
-                                elif command == '/install_script':
-                                    if state.driver:
-                                        send_telegram_message("🔄 Attempting userscript installation...")
-                                        if install_userscript_properly(state.driver):
-                                            send_telegram_message("✅ Userscript installation completed!")
-                                        else:
-                                            send_telegram_message("❌ Userscript installation failed")
+                                elif command == '/setup_profile':
+                                    send_telegram_message("🔄 Running one-time profile setup...")
+                                    if initialize_profile_with_selenium():
+                                        send_telegram_message("✅ Profile setup completed!")
+                                    else:
+                                        send_telegram_message("❌ Profile setup failed!")
                                 elif command == '/help':
                                     help_text = """
-🤖 <b>AdShare Monitor Commands</b>
+🤖 <b>AdShare Monitor (Lightweight)</b>
 
 <b>Basic Controls</b>
-/start - Start monitoring
-/stop - Stop monitoring  
+/start - Start monitoring & Firefox
+/stop - Stop monitoring & Firefox
 /status - Check current status
-/screenshot - Take browser screenshot
-/login - Force re-login
+/screenshot - Take screenshot
 
 <b>Strategy Settings</b>
-/strategy_today - Target today's credits only
-/strategy_combined - Target combined credits
+/strategy_today - Target = 2nd today + safety margin
+/strategy_combined - Target = 2nd (today + yesterday)
 /margin <number> - Set safety margin
 
 <b>Technical</b>
-/install_script - Install userscript
+/setup_profile - Run one-time profile setup
 /help - Show this help
-                                    """
+
+<b>Current Status</b>
+Strategy: {strategy}
+Safety Margin: {margin}
+Firefox: {browser_status}
+Mode: {mode}
+                                    """.format(
+                                        strategy=state.strategy.upper(),
+                                        margin=state.safety_margin,
+                                        browser_status='RUNNING' if state.browser_active else 'STOPPED',
+                                        mode='LIGHTWEIGHT' if state.profile_initialized else 'SETUP'
+                                    )
                                     send_telegram_message(help_text)
         except Exception as e:
-            logger.error(f"Telegram bot error: {e}")
+            logger.error(f"❌ Telegram bot error: {e}")
         
         time.sleep(10)
 
-def initialize_system():
-    """Initialize the complete system"""
-    logger.info("Initializing system...")
-    
-    driver = setup_browser_with_proper_workflow()
-    if not driver:
-        logger.error("Failed to setup browser")
-        return False
-    
-    state.driver = driver
-    state.browser_active = True
-    
-    if not force_login(driver):
-        logger.error("Failed to login")
-        return False
-    
-    logger.info("System initialized successfully!")
-    return True
-
 def main_loop():
-    """Main monitoring loop"""
-    logger.info("Starting AdShare Monitor...")
+    """Main loop without Selenium"""
+    logger.info("🚀 Starting AdShare Monitor (Lightweight Mode)...")
     
-    if not initialize_system():
-        logger.error("System initialization failed!")
-        send_telegram_message("❌ System initialization failed!")
-        return
+    # Check if profile needs initialization
+    if not state.profile_initialized:
+        logger.info("📦 First run: Profile needs initialization")
+        send_telegram_message("🔄 First run: Setting up profile with extensions...")
+        if initialize_profile_with_selenium():
+            send_telegram_message("✅ Profile setup completed! Now running in lightweight mode.")
+        else:
+            send_telegram_message("❌ Profile setup failed! Use /setup_profile to retry.")
     
     send_telegram_message("🚀 AdShare Monitor Started!")
     
     if CONFIG['auto_start']:
         state.is_running = True
+        state.browser_active = True
+        start_firefox_lightweight()
         check_competition_status()
     
     last_check = datetime.now()
@@ -886,34 +784,18 @@ def main_loop():
                     check_competition_status()
                     last_check = current_time
                 
-                if state.driver and state.browser_active:
-                    try:
-                        current_url = state.driver.current_url
-                        if "adsha.re" not in current_url:
-                            state.driver.get(CONFIG['browser_url'])
-                            time.sleep(5)
-                    except:
-                        try:
-                            state.driver.quit()
-                        except:
-                            pass
-                        state.driver = setup_browser_with_proper_workflow()
-                        if state.driver:
-                            force_login(state.driver)
-                
             time.sleep(30)
                 
         except KeyboardInterrupt:
-            logger.info("Shutting down...")
+            logger.info("🛑 Shutting down...")
             break
         except Exception as e:
-            logger.error(f"Main loop error: {e}")
+            logger.error(f"❌ Main loop error: {e}")
             time.sleep(30)
 
 def signal_handler(sig, frame):
-    logger.info("Shutdown signal received")
-    if state.driver:
-        state.driver.quit()
+    logger.info("🛑 Shutdown signal received")
+    stop_firefox_lightweight()
     sys.exit(0)
 
 if __name__ == '__main__':
