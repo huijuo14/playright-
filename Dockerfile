@@ -1,18 +1,31 @@
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+FROM python:3.9-slim
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    firefox-esr \
+    wget \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install geckodriver
+RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz \
+    && tar -xzf geckodriver-v0.33.0-linux64.tar.gz \
+    && chmod +x geckodriver \
+    && mv geckodriver /usr/local/bin/ \
+    && rm geckodriver-v0.33.0-linux64.tar.gz
+
+# Set up working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /root/.mozilla/firefox
+RUN mkdir -p /app/firefox_profile /app/extensions /app/screenshots
 
-# Start the application
-CMD ["python", "adshare_monitor_playwright.py"]
+# Run the application
+CMD ["python", "app.py"]
