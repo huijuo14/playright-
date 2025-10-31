@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v6.1 - Fixed Userscript Installation & Leaderboard
+AdShare Monitor v6.1 - FIXED Userscript Installation & Leaderboard
 """
 
 import subprocess
@@ -66,7 +66,7 @@ CONFIG = {
     'browser_url': "https://adsha.re/surf",
     'browser_width': '1280',
     'browser_height': '720',
-    'headless_mode': True,  # True for Railway
+    'headless_mode': True,
     
     # Technical Settings
     'leaderboard_url': 'https://adsha.re/ten',
@@ -137,14 +137,17 @@ state = MonitorState()
 def download_files():
     """Download extensions"""
     os.makedirs(CONFIG['extensions_dir'], exist_ok=True)
-    logger.info("Downloading extensions...")
+    logger.info("📥 Downloading extensions...")
     
     paths = {}
     for ext_id, ext_info in EXTENSIONS.items():
         filepath = os.path.join(CONFIG['extensions_dir'], ext_info["xpi_file"])
         if not os.path.exists(filepath):
+            logger.info(f"Downloading {ext_info['name']}...")
             urllib.request.urlretrieve(ext_info["xpi_url"], filepath)
-            logger.info(f"Downloaded {ext_info['name']}")
+            logger.info(f"✅ Downloaded {ext_info['name']}")
+        else:
+            logger.info(f"✅ {ext_info['name']} already exists")
         paths[ext_id] = filepath
     
     return paths
@@ -160,14 +163,14 @@ def take_screenshot(driver, name, description=""):
         with open(path, 'rb') as f:
             image_data = f.read()
         
-        logger.info(f"Screenshot: {description or name}")
+        logger.info(f"📸 Screenshot: {description or name}")
         return image_data
     except Exception as e:
-        logger.error(f"Screenshot error: {e}")
+        logger.error(f"❌ Screenshot error: {e}")
         return None
 
-def install_userscript_properly(driver):
-    """The CORRECT way - handle new window!"""
+def install_userscript_working_method(driver):
+    """EXACT WORKING METHOD from the provided script"""
     logger.info("🎯 USERSCRIPT INSTALLATION - Proper Window Handling")
     
     try:
@@ -180,6 +183,11 @@ def install_userscript_properly(driver):
         logger.info("1️⃣ Opening Greasyfork page...")
         driver.get(USERSCRIPT_PAGE)
         time.sleep(6)
+        
+        # Take screenshot and send to Telegram
+        screenshot_data = take_screenshot(driver, "01_greasyfork_page", "Greasyfork page")
+        if screenshot_data and CONFIG.get('chat_id'):
+            send_telegram_message("📄 Greasyfork page loaded", screenshot_data)
         
         # Check if install link exists
         page_source = driver.page_source
@@ -196,7 +204,7 @@ def install_userscript_properly(driver):
             install_link.click()
             logger.info("✅ Clicked install link")
         except Exception as e:
-            logger.warning(f"Direct click failed, trying JS: {e}")
+            logger.warning(f"⚠️ Direct click failed, trying JS: {e}")
             driver.execute_script("document.querySelector('a.install-link').click();")
             logger.info("✅ JS click executed")
         
@@ -216,6 +224,11 @@ def install_userscript_properly(driver):
             driver.switch_to.window(new_window)
             
             time.sleep(3)
+            
+            # Take screenshot of install dialog
+            screenshot_data = take_screenshot(driver, "02_install_dialog", "Install dialog in new window")
+            if screenshot_data and CONFIG.get('chat_id'):
+                send_telegram_message("📋 Install dialog opened", screenshot_data)
             
             # Look for Install button
             logger.info("4️⃣ Looking for Install button...")
@@ -246,16 +259,22 @@ def install_userscript_properly(driver):
                     installed = True
                     time.sleep(3)
                     break
-                except:
+                except Exception as e:
+                    logger.warning(f"❌ Install button not found with {selector}: {e}")
                     continue
             
             if not installed:
-                logger.warning("No Install button found, trying keyboard shortcut...")
+                logger.warning("⚠️ No Install button found, trying keyboard shortcut...")
                 # Try Ctrl+Enter (common shortcut)
                 actions = ActionChains(driver)
                 actions.key_down(Keys.CONTROL).send_keys(Keys.RETURN).key_up(Keys.CONTROL).perform()
                 logger.info("✅ Sent Ctrl+Enter")
                 time.sleep(3)
+            
+            # Take screenshot after install attempt
+            screenshot_data = take_screenshot(driver, "03_after_install_click", "After clicking Install")
+            if screenshot_data and CONFIG.get('chat_id'):
+                send_telegram_message("🔄 After install attempt", screenshot_data)
             
             # Check if window closed (means success)
             time.sleep(2)
@@ -265,6 +284,9 @@ def install_userscript_properly(driver):
                 logger.info("✅ Dialog window closed - likely installed successfully!")
             else:
                 logger.info("ℹ️ Dialog still open")
+                screenshot_data = take_screenshot(driver, "04_dialog_still_open", "Dialog state")
+                if screenshot_data and CONFIG.get('chat_id'):
+                    send_telegram_message("❌ Dialog still open", screenshot_data)
             
             # Switch back to main window
             if main_window in driver.window_handles:
@@ -277,7 +299,10 @@ def install_userscript_properly(driver):
             
         else:
             logger.error("❌ No new window opened!")
-            logger.info("This means Violentmonkey didn't trigger the install dialog")
+            logger.error("This means Violentmonkey didn't trigger the install dialog")
+            screenshot_data = take_screenshot(driver, "02_no_new_window", "No new window appeared")
+            if screenshot_data and CONFIG.get('chat_id'):
+                send_telegram_message("❌ No install dialog opened", screenshot_data)
             return False
             
     except Exception as e:
@@ -317,17 +342,21 @@ def verify_userscript_installed(driver):
         except:
             pass
         
+        take_screenshot(driver, "verify_01_extensions", "Extensions list")
+        
         # Click on Violentmonkey
         try:
             vm_element = driver.find_element(By.XPATH, "//*[contains(text(), 'Violentmonkey')]")
             vm_element.click()
             time.sleep(3)
+            take_screenshot(driver, "verify_02_vm_details", "Violentmonkey details")
             
             # Try to access preferences/options
             try:
                 prefs_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Preferences') or contains(text(), 'Options')]")
                 prefs_btn.click()
                 time.sleep(4)
+                take_screenshot(driver, "verify_03_vm_dashboard", "Violentmonkey dashboard")
                 
                 # Check page source for userscript name
                 page_source = driver.page_source
@@ -338,19 +367,19 @@ def verify_userscript_installed(driver):
                     logger.info("⚠️ Userscript not visible in dashboard")
                     
             except Exception as e:
-                logger.warning(f"Could not access dashboard: {e}")
+                logger.warning(f"⚠️ Could not access dashboard: {e}")
                 
         except Exception as e:
-            logger.warning(f"Could not click Violentmonkey: {e}")
+            logger.warning(f"⚠️ Could not click Violentmonkey: {e}")
         
     except Exception as e:
-        logger.error(f"Verification error: {e}")
+        logger.error(f"❌ Verification error: {e}")
     
     return False
 
-def setup_browser():
-    """Setup Firefox browser with extensions and userscript"""
-    logger.info("Setting up Firefox browser with Selenium...")
+def setup_browser_with_proper_workflow():
+    """Setup browser using the EXACT working workflow from provided script"""
+    logger.info("🚀 Setting up browser with proper workflow...")
     
     # Clean profile directory
     if os.path.exists(CONFIG['profile_dir']):
@@ -365,37 +394,46 @@ def setup_browser():
     options = Options()
     if CONFIG['headless_mode']:
         options.add_argument("--headless")
-    options.add_argument(f"--width={CONFIG['browser_width']}")
-    options.add_argument(f"--height={CONFIG['browser_height']}")
+    options.add_argument(f"-profile")
+    options.add_argument(CONFIG['profile_dir'])
     options.set_preference("xpinstall.signatures.required", False)
     options.set_preference("extensions.autoDisableScopes", 0)
     options.set_preference("extensions.enabledScopes", 15)
     
-    # Create driver
-    try:
-        driver = webdriver.Firefox(options=options)
-        logger.info("Firefox browser started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start Firefox: {e}")
-        return None
+    # ============================================================
+    # SESSION 1: Install Extensions
+    # ============================================================
+    logger.info("SESSION 1: Installing Extensions")
+    
+    driver = webdriver.Firefox(options=options)
+    driver.set_window_size(1400, 1000)
     
     try:
-        # Install extensions
         for ext_id, ext_path in extension_paths.items():
             abs_path = os.path.abspath(ext_path)
             driver.install_addon(abs_path, temporary=False)
-            logger.info(f"Installed {EXTENSIONS[ext_id]['name']}")
+            logger.info(f"✅ Installed {EXTENSIONS[ext_id]['name']}")
             time.sleep(3)
         
-        # Restart browser to load extensions properly
+        logger.info("🔄 Restarting browser...")
         driver.quit()
-        time.sleep(3)
         
-        # Create new driver instance
-        driver = webdriver.Firefox(options=options)
-        logger.info("Browser restarted with extensions")
-        
-        # Wait for extensions to load
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        driver.quit()
+        return None
+    
+    # ============================================================
+    # SESSION 2: Install Userscript
+    # ============================================================
+    logger.info("SESSION 2: Installing Userscript (After Restart)")
+    
+    time.sleep(3)
+    driver = webdriver.Firefox(options=options)
+    driver.set_window_size(1400, 1000)
+    
+    try:
+        logger.info("⏳ Waiting for extensions to load...")
         time.sleep(10)
         
         # Verify extensions loaded
@@ -408,27 +446,37 @@ def setup_browser():
         except:
             pass
         
+        screenshot_data = take_screenshot(driver, "00_extensions_loaded", "Extensions loaded and verified")
+        if screenshot_data and CONFIG.get('chat_id'):
+            send_telegram_message("🔧 Extensions loaded", screenshot_data)
+        
         page_source = driver.page_source.lower()
         if "violentmonkey" in page_source:
             logger.info("✅ Violentmonkey is loaded!")
         else:
             logger.warning("⚠️ Violentmonkey not detected in addons page")
         
-        # Install userscript
-        success = install_userscript_properly(driver)
+        # Install userscript using the working method
+        success = install_userscript_working_method(driver)
         
         if success:
             logger.info("🎉 INSTALLATION COMPLETED - VERIFYING...")
             time.sleep(5)
             verify_userscript_installed(driver)
         
-        state.extensions_installed = True
-        logger.info("Browser setup completed successfully!")
+        # Final screenshot
+        time.sleep(3)
+        driver.get("about:addons")
+        time.sleep(2)
+        take_screenshot(driver, "99_final_state", "Final state")
         
+        logger.info("✨ Browser setup complete!")
         return driver
         
     except Exception as e:
-        logger.error(f"Browser setup error: {e}")
+        logger.error(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         if driver:
             driver.quit()
         return None
@@ -436,7 +484,7 @@ def setup_browser():
 def force_login(driver):
     """Login to AdShare"""
     try:
-        logger.info("Attempting login...")
+        logger.info("🔐 Attempting login...")
         
         login_url = "https://adsha.re/login"
         driver.get(login_url)
@@ -452,7 +500,7 @@ def force_login(driver):
         
         form = soup.find('form', {'name': 'login'})
         if not form:
-            logger.error("No login form found")
+            logger.error("❌ No login form found")
             return False
         
         password_field_name = None
@@ -465,10 +513,10 @@ def force_login(driver):
                 break
         
         if not password_field_name:
-            logger.error("No password field found")
+            logger.error("❌ No password field found")
             return False
         
-        logger.info(f"Password field: {password_field_name}")
+        logger.info(f"🔑 Password field: {password_field_name}")
         
         # Fill email
         email_selectors = [
@@ -483,14 +531,14 @@ def force_login(driver):
                 email_field = driver.find_element(By.CSS_SELECTOR, selector)
                 email_field.clear()
                 email_field.send_keys(CONFIG['email'])
-                logger.info("Email entered successfully")
+                logger.info("✅ Email entered successfully")
                 email_filled = True
                 break
             except:
                 continue
         
         if not email_filled:
-            logger.error("Could not fill email field")
+            logger.error("❌ Could not fill email field")
             return False
         
         time.sleep(2)
@@ -508,13 +556,14 @@ def force_login(driver):
                 password_field = driver.find_element(By.CSS_SELECTOR, selector)
                 password_field.clear()
                 password_field.send_keys(CONFIG['password'])
-                logger.info("Password entered successfully")
+                logger.info("✅ Password entered successfully")
                 password_filled = True
                 break
             except:
                 continue
         
         if not password_filled:
+            logger.error("❌ Could not fill password field")
             return False
         
         time.sleep(2)
@@ -533,7 +582,7 @@ def force_login(driver):
                 login_btn = driver.find_element(By.CSS_SELECTOR, selector)
                 if login_btn.is_displayed() and login_btn.is_enabled():
                     login_btn.click()
-                    logger.info("Login button clicked successfully")
+                    logger.info("✅ Login button clicked successfully")
                     login_clicked = True
                     break
             except:
@@ -543,7 +592,7 @@ def force_login(driver):
             try:
                 form_element = driver.find_element(By.CSS_SELECTOR, "form[name='login']")
                 form_element.submit()
-                logger.info("Form submitted successfully")
+                logger.info("✅ Form submitted successfully")
                 login_clicked = True
             except:
                 pass
@@ -557,19 +606,31 @@ def force_login(driver):
         # Check if login successful
         current_url = driver.current_url
         if "surf" in current_url or "game" in current_url.lower():
-            logger.info("Login successful!")
+            logger.info("✅ Login successful!")
             state.is_logged_in = True
             send_telegram_message("✅ Login Successful!")
+            
+            # Take screenshot of successful login
+            screenshot_data = take_screenshot(driver, "login_success", "Login successful")
+            if screenshot_data and CONFIG.get('chat_id'):
+                send_telegram_message("🎯 Ready to surf!", screenshot_data)
+                
             return True
         else:
-            logger.error("Login failed")
+            logger.error("❌ Login failed")
+            screenshot_data = take_screenshot(driver, "login_failed", "Login failed")
+            if screenshot_data and CONFIG.get('chat_id'):
+                send_telegram_message("❌ Login failed - check screenshot", screenshot_data)
             return False
             
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"❌ Login error: {e}")
+        screenshot_data = take_screenshot(driver, "login_error", "Login error")
+        if screenshot_data and CONFIG.get('chat_id'):
+            send_telegram_message(f"❌ Login error: {str(e)}", screenshot_data)
         return False
 
-# ==================== MONITORING FUNCTIONS ====================
+# ==================== FIXED LEADERBOARD PARSING ====================
 
 class LeaderboardParser:
     @staticmethod
@@ -578,20 +639,34 @@ class LeaderboardParser:
             soup = BeautifulSoup(html, 'html.parser')
             leaderboard = []
             
-            # Look for leaderboard entries - they have specific patterns
-            entries = soup.find_all('div', style=re.compile(r'width:\s*250px'))
-            if not entries:
-                # Alternative selector
-                entries = soup.find_all('div', style=re.compile(r'margin:\s*5px auto'))
+            logger.info(f"🔍 Parsing HTML content, length: {len(html)}")
             
+            # Multiple selector strategies
+            selectors = [
+                'div[style*="width:250px"][style*="margin:5px auto"]',
+                'div[style*="width:250px"]',
+                'div[style*="margin:5px auto"]',
+                'div.leaderboard-entry',
+                '.leaderboard-item',
+            ]
+            
+            entries = []
+            for selector in selectors:
+                entries = soup.select(selector)
+                if entries:
+                    logger.info(f"✅ Found {len(entries)} entries with selector: {selector}")
+                    break
+            
+            # Fallback: find all divs and filter
             if not entries:
-                # Try to find any divs containing the pattern
                 all_divs = soup.find_all('div')
-                entries = [div for div in all_divs if 'T:' in div.get_text() and 'Y:' in div.get_text()]
+                entries = [div for div in all_divs if any(x in div.get_text() for x in ['T:', 'Y:', 'DB:'])]
+                logger.info(f"🔄 Fallback found {len(entries)} entries")
             
             rank = 1
             for entry in entries:
                 text = entry.get_text(strip=True)
+                logger.debug(f"Entry {rank} text: {text[:100]}...")
                 
                 # Extract user ID
                 user_match = re.search(r'#(\d+)', text)
@@ -600,7 +675,7 @@ class LeaderboardParser:
                 
                 user_id = user_match.group(1)
                 
-                # Extract credits
+                # Extract today's credits
                 today_match = re.search(r'T:\s*(\d+(?:,\d+)*)', text)
                 yesterday_match = re.search(r'Y:\s*(\d+(?:,\d+)*)', text)
                 db_match = re.search(r'DB:\s*(\d+(?:,\d+)*)', text)
@@ -625,57 +700,15 @@ class LeaderboardParser:
                 })
                 rank += 1
             
+            logger.info(f"✅ Successfully parsed {len(leaderboard)} leaderboard entries")
             return leaderboard
         except Exception as e:
-            logger.error(f"Error parsing leaderboard with BeautifulSoup: {e}")
+            logger.error(f"❌ Error parsing leaderboard: {e}")
             return []
-    
-    @staticmethod
-    def parse_with_regex(html: str) -> List[Dict]:
-        """Alternative parsing method using regex"""
-        try:
-            leaderboard = []
-            
-            # Pattern to match leaderboard entries
-            pattern = r'#(\d+).*?T:\s*(\d+(?:,\d+)*).*?Y:\s*(\d+(?:,\d+)*).*?DB:\s*(\d+(?:,\d+)*)'
-            matches = re.findall(pattern, html, re.DOTALL)
-            
-            rank = 1
-            for match in matches:
-                user_id = match[0]
-                today = int(match[1].replace(',', '')) if match[1] else 0
-                yesterday = int(match[2].replace(',', '')) if match[2] else 0
-                day_before = int(match[3].replace(',', '')) if match[3] else 0
-                
-                leaderboard.append({
-                    'rank': rank,
-                    'user_id': user_id,
-                    'total_surfed': today + yesterday + day_before,
-                    'today_credits': today,
-                    'yesterday_credits': yesterday,
-                    'day_before_credits': day_before
-                })
-                rank += 1
-            
-            return leaderboard
-        except Exception as e:
-            logger.error(f"Error parsing leaderboard with regex: {e}")
-            return []
-    
-    @staticmethod
-    def parse(html: str) -> List[Dict]:
-        # Try BeautifulSoup first
-        leaderboard = LeaderboardParser.parse_with_beautifulsoup(html)
-        if not leaderboard:
-            # Fallback to regex
-            leaderboard = LeaderboardParser.parse_with_regex(html)
-        
-        leaderboard.sort(key=lambda x: x['rank'])
-        return leaderboard
 
-def fetch_leaderboard() -> Optional[List[Dict]]:
+def fetch_leaderboard_fixed() -> Optional[List[Dict]]:
+    """Fixed leaderboard fetching with proper headers"""
     try:
-        # Exact headers that work with the site
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -691,35 +724,32 @@ def fetch_leaderboard() -> Optional[List[Dict]]:
             'Sec-Fetch-Site': 'same-origin',
         }
         
-        # Try with POST request (common for leaderboard updates)
+        logger.info("📊 Fetching leaderboard...")
         response = requests.post(
             CONFIG['leaderboard_url'],
             headers=headers,
             timeout=30
         )
         
+        logger.info(f"📥 Leaderboard response status: {response.status_code}")
+        
         if response.status_code == 200:
-            leaderboard = LeaderboardParser.parse(response.text)
+            leaderboard = LeaderboardParser.parse_with_beautifulsoup(response.text)
             if leaderboard:
-                logger.info(f"Successfully parsed {len(leaderboard)} leaderboard entries")
                 return leaderboard
             else:
-                logger.warning("Leaderboard parsed but empty - trying alternative method")
-                # Try GET request as fallback
-                response_get = requests.get(CONFIG['leaderboard_url'], headers=headers, timeout=30)
-                if response_get.status_code == 200:
-                    leaderboard = LeaderboardParser.parse(response_get.text)
-                    if leaderboard:
-                        logger.info(f"GET method parsed {len(leaderboard)} entries")
-                        return leaderboard
+                logger.warning("⚠️ Leaderboard parsed but empty - checking response content")
+                logger.info(f"Response preview: {response.text[:500]}...")
         else:
-            logger.error(f"HTTP {response.status_code} fetching leaderboard")
+            logger.error(f"❌ HTTP {response.status_code} fetching leaderboard")
             
         return None
             
     except Exception as e:
-        logger.error(f"Network error fetching leaderboard: {e}")
+        logger.error(f"❌ Network error fetching leaderboard: {e}")
         return None
+
+# ==================== REST OF THE FUNCTIONS (same as before) ====================
 
 def calculate_target(leaderboard: List[Dict]) -> Tuple[int, str]:
     if len(leaderboard) < 2:
@@ -758,27 +788,20 @@ def send_telegram_message(message: str, image_data=None):
             data = {'chat_id': CONFIG['chat_id']}
             requests.post(url, files=files, data=data, timeout=15)
             
-        logger.info("Telegram message sent successfully")
+        logger.info(f"📤 Telegram message sent: {message[:100]}...")
     except Exception as e:
-        logger.error(f"Telegram error: {e}")
+        logger.error(f"❌ Telegram error: {e}")
 
 def check_competition_status():
     """Single competition check"""
     current_time = datetime.now()
     state.last_check_time = current_time
     
-    leaderboard = fetch_leaderboard()
+    leaderboard = fetch_leaderboard_fixed()
     if not leaderboard:
-        logger.error("Failed to fetch leaderboard")
-        # Try to restart browser if leaderboard fails
-        if state.driver:
-            try:
-                state.driver.quit()
-            except:
-                pass
-            state.driver = setup_browser()
-            if state.driver:
-                force_login(state.driver)
+        logger.error("❌ Failed to fetch leaderboard")
+        if state.driver and not state.is_logged_in:
+            force_login(state.driver)
         return
     
     state.leaderboard = leaderboard
@@ -792,7 +815,7 @@ def check_competition_status():
             break
     
     if not my_data:
-        logger.error(f"User #{CONFIG['my_user_id']} not in top 10!")
+        logger.error(f"❌ User #{CONFIG['my_user_id']} not in top 10!")
         return
     
     my_value = get_my_value(my_data)
@@ -836,16 +859,9 @@ def check_competition_status():
 📈 Growth Rate: <b>{state.credits_growth_rate:.1f}/hour</b>
 
 {status_message}
-
-📊 <b>Top 3:</b>
-"""
+    """.strip()
     
-    # Add top 3 to message
-    for i, entry in enumerate(state.leaderboard[:3]):
-        medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉"
-        full_message += f"{medal} #{entry['user_id']}: {entry['today_credits']} today\n"
-    
-    send_telegram_message(full_message.strip())
+    send_telegram_message(full_message)
     
     # Take screenshot if browser is active
     if state.driver and state.browser_active:
@@ -854,7 +870,7 @@ def check_competition_status():
             if screenshot_data:
                 send_telegram_message("📸 Current browser state:", screenshot_data)
         except Exception as e:
-            logger.error(f"Screenshot failed: {e}")
+            logger.error(f"❌ Screenshot failed: {e}")
 
 def telegram_bot_loop():
     """Handle Telegram commands"""
@@ -900,37 +916,26 @@ def telegram_bot_loop():
                                             send_telegram_message("✅ Login successful!")
                                         else:
                                             send_telegram_message("❌ Login failed")
-                                elif command == '/restart_browser':
+                                elif command == '/install_script':
                                     if state.driver:
-                                        state.driver.quit()
-                                        state.driver = setup_browser()
-                                        if state.driver:
-                                            send_telegram_message("✅ Browser restarted!")
+                                        send_telegram_message("🔄 Attempting userscript installation...")
+                                        if install_userscript_working_method(state.driver):
+                                            send_telegram_message("✅ Userscript installation completed!")
                                         else:
-                                            send_telegram_message("❌ Browser restart failed")
-                                elif command == '/leaderboard':
-                                    leaderboard = fetch_leaderboard()
-                                    if leaderboard:
-                                        lb_message = "🏆 <b>Current Leaderboard</b>\n\n"
-                                        for entry in leaderboard[:5]:
-                                            medal = "🥇" if entry['rank'] == 1 else "🥈" if entry['rank'] == 2 else "🥉" if entry['rank'] == 3 else "🔸"
-                                            lb_message += f"{medal} #{entry['user_id']}: {entry['today_credits']} today\n"
-                                        send_telegram_message(lb_message)
-                                    else:
-                                        send_telegram_message("❌ Could not fetch leaderboard")
+                                            send_telegram_message("❌ Userscript installation failed")
         except Exception as e:
-            logger.error(f"Telegram bot error: {e}")
+            logger.error(f"❌ Telegram bot error: {e}")
         
         time.sleep(10)
 
 def initialize_system():
     """Initialize the complete system"""
-    logger.info("Initializing system...")
+    logger.info("🚀 Initializing system...")
     
-    # Setup browser
-    driver = setup_browser()
+    # Setup browser with proper workflow
+    driver = setup_browser_with_proper_workflow()
     if not driver:
-        logger.error("Failed to setup browser")
+        logger.error("❌ Failed to setup browser")
         return False
     
     state.driver = driver
@@ -938,19 +943,19 @@ def initialize_system():
     
     # Login
     if not force_login(driver):
-        logger.error("Failed to login")
+        logger.error("❌ Failed to login")
         return False
     
-    logger.info("System initialized successfully!")
+    logger.info("✅ System initialized successfully!")
     return True
 
 def main_loop():
     """Main monitoring loop"""
-    logger.info("Starting AdShare Monitor...")
+    logger.info("🚀 Starting AdShare Monitor...")
     
     # Initialize system
     if not initialize_system():
-        logger.error("System initialization failed!")
+        logger.error("❌ System initialization failed!")
         send_telegram_message("❌ System initialization failed!")
         return
     
@@ -976,30 +981,28 @@ def main_loop():
                         current_url = state.driver.current_url
                         if "adsha.re" not in current_url:
                             state.driver.get(CONFIG['browser_url'])
-                            logger.info("Refreshed browser page")
                             time.sleep(5)
-                    except Exception as e:
-                        logger.error(f"Browser refresh failed: {e}")
-                        # Try to restart browser
+                    except:
+                        # Browser might be dead, try to restart
                         try:
                             state.driver.quit()
                         except:
                             pass
-                        state.driver = setup_browser()
+                        state.driver = setup_browser_with_proper_workflow()
                         if state.driver:
                             force_login(state.driver)
                 
             time.sleep(30)
                 
         except KeyboardInterrupt:
-            logger.info("Shutting down...")
+            logger.info("🛑 Shutting down...")
             break
         except Exception as e:
-            logger.error(f"Main loop error: {e}")
+            logger.error(f"❌ Main loop error: {e}")
             time.sleep(30)
 
 def signal_handler(sig, frame):
-    logger.info("Shutdown signal received")
+    logger.info("🛑 Shutdown signal received")
     if state.driver:
         state.driver.quit()
     sys.exit(0)
