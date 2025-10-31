@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v10.0 - Ultra Lightweight
+AdShare Monitor v11.0 - Ultra Low Resource
 """
 
 import subprocess
@@ -47,11 +47,12 @@ CONFIG = {
     'chat_id': None,
     'email': 'jiocloud90@gmail.com',
     'password': '@Sd2007123',
-    'leaderboard_check_interval': 600,
+    'leaderboard_check_interval': 1800,
     'safety_margin': 250,
     'competition_strategy': 'today_only',
     'my_user_id': '4242',
     'browser_url': "https://adsha.re/surf",
+    'login_url': "https://adsha.re/login",  # Added login URL
     'leaderboard_url': 'https://adsha.re/ten',
     'timezone': 'Asia/Kolkata',
     'profile_dir': '/app/firefox_profile',
@@ -207,21 +208,28 @@ def initialize_profile():
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--memory-pressure-off")
     options.add_argument(f"-profile")
     options.add_argument(CONFIG['profile_dir'])
     options.set_preference("xpinstall.signatures.required", False)
     options.set_preference("extensions.autoDisableScopes", 0)
     options.set_preference("extensions.enabledScopes", 15)
-    # Memory optimization preferences
-    options.set_preference("browser.cache.memory.enable", False)
-    options.set_preference("browser.sessionstore.interval", 300000)
-    options.set_preference("dom.ipc.processCount", 1)
-    options.set_preference("content.processCount", 1)
+    
+    # ULTRA LOW MEMORY SETTINGS
+    options.set_preference("browser.tabs.remote.autostart", False)
+    options.set_preference("browser.tabs.remote.autostart.2", False)
+    options.set_preference("dom.ipc.processCount", 1)  # Single process
+    options.set_preference("dom.ipc.processCount.webIsolated", 1)
+    options.set_preference("browser.sessionstore.interval", 60000)  # Reduce session save frequency
+    options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
+    options.set_preference("browser.sessionstore.restore_on_demand", False)
+    options.set_preference("browser.sessionstore.resume_from_crash", False)
+    options.set_preference("browser.startup.homepage_override.mstone", "ignore")
+    options.set_preference("toolkit.telemetry.reportingpolicy.firstRun", False)
+    options.set_preference("toolkit.telemetry.shutdownPingSender.enabled", False)
+    options.set_preference("datareporting.healthreport.uploadEnabled", False)
+    options.set_preference("dom.disable_beforeunload", True)
+    options.set_preference("dom.max_script_run_time", 30)
+    options.set_preference("dom.min_timeout_value", 1000)
     
     # Install extensions
     logger.info("Installing extensions...")
@@ -267,26 +275,29 @@ def start_browser():
         if not initialize_profile():
             return None
     
-    logger.info("Starting browser...")
+    logger.info("Starting browser with low memory settings...")
     
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-extensions")
     options.add_argument(f"-profile")
     options.add_argument(CONFIG['profile_dir'])
-    # Memory optimization
+    
+    # ULTRA LOW MEMORY SETTINGS
     options.set_preference("dom.ipc.processCount", 1)
-    options.set_preference("content.processCount", 1)
+    options.set_preference("dom.ipc.processCount.webIsolated", 1)
     options.set_preference("browser.tabs.remote.autostart", False)
     options.set_preference("browser.tabs.remote.autostart.2", False)
+    options.set_preference("browser.sessionstore.interval", 60000)
+    options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
+    options.set_preference("dom.disable_beforeunload", True)
     
     try:
         driver = webdriver.Firefox(options=options)
         state.browser_active = True
-        logger.info("Browser started!")
+        logger.info("Browser started with low memory settings!")
         return driver
     except Exception as e:
         logger.error(f"Failed to start browser: {e}")
@@ -302,26 +313,38 @@ def stop_browser():
         state.driver = None
     state.browser_active = False
 
-def force_login(driver):
+def smart_login_flow(driver):
+    """New login flow: login page first, wait 60s, then surf"""
     try:
-        logger.info("Logging in...")
-        driver.get("https://adsha.re/login")
-        time.sleep(65)
+        logger.info("Starting smart login flow...")
         
-        # Auto-login via userscript should handle this
-        # Just navigate to surf page
-        driver.get("https://adsha.re/surf")
+        # Step 1: Open login page first
+        logger.info("Step 1: Opening login page...")
+        driver.get(CONFIG['login_url'])
         time.sleep(5)
         
-        if "surf" in driver.current_url:
-            logger.info("Login successful!")
+        # Step 2: Wait 60 seconds for auto-login by userscript
+        logger.info("Step 2: Waiting 60 seconds for auto-login...")
+        for i in range(60):
+            time.sleep(1)
+            if i % 10 == 0:  # Log every 10 seconds
+                logger.info(f"Auto-login wait: {i}/60 seconds")
+        
+        # Step 3: Navigate to surf page
+        logger.info("Step 3: Navigating to surf page...")
+        driver.get(CONFIG['browser_url'])
+        time.sleep(5)
+        
+        # Check if successfully on surf page
+        if "surf" in driver.current_url or "game" in driver.current_url.lower():
+            logger.info("✅ Login successful! Ready to surf.")
             return True
         else:
-            logger.error("Login failed")
+            logger.error("❌ Login failed - not on surf page")
             return False
             
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"Login flow error: {e}")
         return False
 
 # ==================== LEADERBOARD ====================
@@ -469,7 +492,7 @@ def check_competition_status():
         logger.info("Starting browser to chase target")
         state.driver = start_browser()
         if state.driver:
-            force_login(state.driver)
+            smart_login_flow(state.driver)
     
     target, explanation = calculate_target(leaderboard)
     state.current_target = target
@@ -523,7 +546,7 @@ def telegram_bot_loop():
                                     if not state.browser_active:
                                         state.driver = start_browser()
                                         if state.driver:
-                                            force_login(state.driver)
+                                            smart_login_flow(state.driver)
                                     check_competition_status()
                                 elif command == '/stop':
                                     state.is_running = False
@@ -548,15 +571,17 @@ def telegram_bot_loop():
                                         send_telegram_message("❌ Usage: /margin <number>")
                                 elif command == '/help':
                                     help_text = """
-🤖 <b>AdShare Monitor</b>
+🤖 <b>AdShare Monitor (Low Resource)</b>
 
-/start - Start
-/stop - Stop  
-/status - Status
-/strategy_today - Today only
-/strategy_combined - Combined
-/margin <number> - Set margin
+/start - Start monitoring
+/stop - Stop monitoring  
+/status - Check status
+/strategy_today - Today only strategy
+/strategy_combined - Combined strategy
+/margin <number> - Set safety margin
 /help - This help
+
+💡 <i>Running in low resource mode</i>
                                     """
                                     send_telegram_message(help_text)
         except Exception as e:
@@ -564,20 +589,20 @@ def telegram_bot_loop():
         time.sleep(10)
 
 def main_loop():
-    logger.info("Starting AdShare Monitor...")
+    logger.info("Starting AdShare Monitor (Low Resource Mode)...")
     
     if not initialize_profile():
         logger.error("Profile init failed!")
         send_telegram_message("❌ Profile setup failed!")
         return
     
-    send_telegram_message("🚀 AdShare Monitor Started!")
+    send_telegram_message("🚀 AdShare Monitor Started! (Low Resource Mode)")
     
     if CONFIG['auto_start']:
         state.is_running = True
         state.driver = start_browser()
         if state.driver:
-            force_login(state.driver)
+            smart_login_flow(state.driver)
         check_competition_status()
     
     last_check = datetime.now()
@@ -602,7 +627,7 @@ def main_loop():
                             pass
                         state.driver = start_browser()
                         if state.driver:
-                            force_login(state.driver)
+                            smart_login_flow(state.driver)
             time.sleep(30)
         except KeyboardInterrupt:
             break
