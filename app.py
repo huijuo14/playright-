@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v9.0 - Optimized (Minimal Selenium Usage)
+AdShare Monitor v9.1 - Fixed Telegram & Screenshot
 """
 
 import subprocess
@@ -49,7 +49,7 @@ except ImportError:
 # ==================== CONFIGURATION ====================
 
 CONFIG = {
-    'telegram_token': "8332516699:AAF8287h5Be4ejvhoFpcYiHG4YHVJlH_R0g",
+    'telegram_token': "8332516699:AAF8287h5Be4ejvhoFpcYiHG4YHVJlH_R0g",  # FIXED: Correct spelling
     'chat_id': None,
     
     # Login credentials
@@ -93,7 +93,7 @@ EXTENSIONS = {
     }
 }
 
-USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554286-login-smart-symbol-game-auto-solver-pro-v3-4-with-auto-login/"
+USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/551435-very-smart-symbol-game-auto-solver-pro-v3-4"
 
 # ==================== LOGGING SETUP ====================
 
@@ -315,16 +315,6 @@ def initialize_profile_with_selenium():
         logger.info("⏳ Waiting for extensions to load...")
         time.sleep(10)
         
-        # Verify extensions loaded
-        driver.get("about:addons")
-        time.sleep(3)
-        
-        page_source = driver.page_source.lower()
-        if "violentmonkey" in page_source:
-            logger.info("✅ Violentmonkey is loaded!")
-        else:
-            logger.warning("⚠️ Violentmonkey not detected in addons page")
-        
         # Install userscript
         success = install_userscript_properly(driver)
         
@@ -409,12 +399,12 @@ def stop_firefox_lightweight():
     state.browser_active = False
 
 def take_screenshot_lightweight():
-    """Take screenshot using external tool (if available)"""
+    """Take screenshot using scrot"""
     try:
         os.makedirs(CONFIG['screenshots_dir'], exist_ok=True)
         path = f"{CONFIG['screenshots_dir']}/screenshot_{int(time.time())}.png"
         
-        # Try to use scrot or other screenshot tool
+        # Use scrot for screenshot
         screenshot_cmd = ['scrot', path]
         result = subprocess.run(screenshot_cmd, capture_output=True, timeout=10)
         
@@ -424,7 +414,7 @@ def take_screenshot_lightweight():
             logger.info("✅ Screenshot taken")
             return image_data
         else:
-            logger.warning("⚠️ Could not take screenshot - scrot not available")
+            logger.warning("⚠️ Could not take screenshot")
             return None
             
     except Exception as e:
@@ -557,19 +547,21 @@ def should_stop_browser(leaderboard: List[Dict]) -> bool:
 
 def send_telegram_message(message: str, image_data=None):
     if not CONFIG.get('chat_id'):
+        logger.info(f"Telegram message (no chat_id): {message[:100]}...")
         return
     
     try:
-        url = f"https://api.telegram.org/bot{CONFIG['telefox_token']}/sendMessage"
+        url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage"  # FIXED: Correct spelling
         data = {'chat_id': CONFIG['chat_id'], 'text': message, 'parse_mode': 'HTML'}
-        requests.post(url, data=data, timeout=15)
+        response = requests.post(url, data=data, timeout=15)
         
         if image_data:
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"  # FIXED: Correct spelling
             files = {'photo': ('screenshot.png', image_data, 'image/png')}
             data = {'chat_id': CONFIG['chat_id']}
             requests.post(url, files=files, data=data, timeout=15)
             
+        logger.info(f"📤 Telegram message sent: {message[:100]}...")
     except Exception as e:
         logger.error(f"❌ Telegram error: {e}")
 
@@ -760,18 +752,18 @@ def main_loop():
     # Check if profile needs initialization
     if not state.profile_initialized:
         logger.info("📦 First run: Profile needs initialization")
-        send_telegram_message("🔄 First run: Setting up profile with extensions...")
         if initialize_profile_with_selenium():
             send_telegram_message("✅ Profile setup completed! Now running in lightweight mode.")
         else:
             send_telegram_message("❌ Profile setup failed! Use /setup_profile to retry.")
+            return
     
     send_telegram_message("🚀 AdShare Monitor Started!")
     
     if CONFIG['auto_start']:
         state.is_running = True
-        state.browser_active = True
         start_firefox_lightweight()
+        time.sleep(10)  # Wait for Firefox to start
         check_competition_status()
     
     last_check = datetime.now()
