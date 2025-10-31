@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v6.0 - Selenium Firefox Edition
-Simple and reliable browser automation
+AdShare Monitor v6.1 - Fixed Userscript Installation & Leaderboard
 """
 
 import subprocess
@@ -28,6 +27,7 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.common.action_chains import ActionChains
     from PIL import Image
 except ImportError:
     print("Installing required packages...")
@@ -43,6 +43,7 @@ except ImportError:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.common.action_chains import ActionChains
     from PIL import Image
 
 # ==================== CONFIGURATION ====================
@@ -166,61 +167,66 @@ def take_screenshot(driver, name, description=""):
         return None
 
 def install_userscript_properly(driver):
-    """Install userscript with proper window handling"""
-    logger.info("Starting userscript installation...")
+    """The CORRECT way - handle new window!"""
+    logger.info("🎯 USERSCRIPT INSTALLATION - Proper Window Handling")
     
     try:
         # Get initial window handle
         main_window = driver.current_window_handle
         initial_windows = driver.window_handles
+        logger.info(f"Starting windows: {len(initial_windows)}")
         
         # Go to Greasyfork page
-        logger.info("Opening Greasyfork page...")
+        logger.info("1️⃣ Opening Greasyfork page...")
         driver.get(USERSCRIPT_PAGE)
         time.sleep(6)
         
         # Check if install link exists
         page_source = driver.page_source
         if "install this script" not in page_source.lower():
-            logger.error("Violentmonkey not detected by Greasyfork!")
+            logger.error("❌ Violentmonkey not detected by Greasyfork!")
             return False
         
-        logger.info("Violentmonkey detected!")
+        logger.info("✅ Violentmonkey detected!")
         
         # Click install link
-        logger.info("Clicking install link...")
+        logger.info("2️⃣ Clicking install link...")
         try:
             install_link = driver.find_element(By.CSS_SELECTOR, "a.install-link")
             install_link.click()
-            logger.info("Clicked install link")
+            logger.info("✅ Clicked install link")
         except Exception as e:
             logger.warning(f"Direct click failed, trying JS: {e}")
             driver.execute_script("document.querySelector('a.install-link').click();")
-            logger.info("JS click executed")
+            logger.info("✅ JS click executed")
         
         # Wait for new window to open
+        logger.info("3️⃣ Waiting for install dialog window...")
         time.sleep(5)
         
         # Check for new windows
         current_windows = driver.window_handles
+        logger.info(f"Current windows: {len(current_windows)}")
         
         if len(current_windows) > len(initial_windows):
-            logger.info("New window detected!")
+            logger.info(f"✅ New window detected! ({len(current_windows) - len(initial_windows)} new)")
             
-            # Switch to the newest window
+            # Switch to the newest window (last one)
             new_window = [w for w in current_windows if w not in initial_windows][-1]
             driver.switch_to.window(new_window)
             
             time.sleep(3)
             
             # Look for Install button
-            logger.info("Looking for Install button...")
+            logger.info("4️⃣ Looking for Install button...")
             
+            # Try multiple selectors
             install_selectors = [
                 (By.XPATH, "//button[contains(text(), 'Install')]"),
                 (By.XPATH, "//button[contains(@class, 'install')]"),
                 (By.CSS_SELECTOR, "button.vm-confirm"),
                 (By.XPATH, "//button[@type='submit']"),
+                (By.XPATH, "//input[@type='submit']"),
             ]
             
             installed = False
@@ -229,8 +235,14 @@ def install_userscript_properly(driver):
                     install_btn = WebDriverWait(driver, 5).until(
                         EC.element_to_be_clickable((by, selector))
                     )
+                    
+                    # Scroll into view
+                    driver.execute_script("arguments[0].scrollIntoView(true);", install_btn)
+                    time.sleep(1)
+                    
+                    # Click
                     install_btn.click()
-                    logger.info(f"Clicked Install button using {selector}")
+                    logger.info(f"✅ Clicked Install button! (using {selector})")
                     installed = True
                     time.sleep(3)
                     break
@@ -239,24 +251,102 @@ def install_userscript_properly(driver):
             
             if not installed:
                 logger.warning("No Install button found, trying keyboard shortcut...")
-                actions = webdriver.ActionChains(driver)
+                # Try Ctrl+Enter (common shortcut)
+                actions = ActionChains(driver)
                 actions.key_down(Keys.CONTROL).send_keys(Keys.RETURN).key_up(Keys.CONTROL).perform()
-                logger.info("Sent Ctrl+Enter")
+                logger.info("✅ Sent Ctrl+Enter")
                 time.sleep(3)
             
-            # Close install window and switch back
-            driver.close()
-            driver.switch_to.window(main_window)
+            # Check if window closed (means success)
+            time.sleep(2)
+            remaining_windows = driver.window_handles
             
-            logger.info("Userscript installation completed!")
+            if len(remaining_windows) < len(current_windows):
+                logger.info("✅ Dialog window closed - likely installed successfully!")
+            else:
+                logger.info("ℹ️ Dialog still open")
+            
+            # Switch back to main window
+            if main_window in driver.window_handles:
+                driver.switch_to.window(main_window)
+            else:
+                driver.switch_to.window(driver.window_handles[0])
+            
+            logger.info("✅ Userscript installation process completed!")
             return True
+            
         else:
-            logger.error("No new window opened!")
+            logger.error("❌ No new window opened!")
+            logger.info("This means Violentmonkey didn't trigger the install dialog")
             return False
             
     except Exception as e:
-        logger.error(f"Error during installation: {e}")
+        logger.error(f"❌ Error during installation: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try to get back to main window
+        try:
+            driver.switch_to.window(main_window)
+        except:
+            if driver.window_handles:
+                driver.switch_to.window(driver.window_handles[0])
+        
         return False
+
+def verify_userscript_installed(driver):
+    """Check if userscript was actually installed"""
+    logger.info("🔍 VERIFICATION - Checking if userscript is installed")
+    
+    try:
+        # Close any extra windows first
+        while len(driver.window_handles) > 1:
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+        # Go to about:addons
+        driver.get("about:addons")
+        time.sleep(3)
+        
+        # Click Extensions tab
+        try:
+            ext_tab = driver.find_element(By.CSS_SELECTOR, "button[name='extension']")
+            ext_tab.click()
+            time.sleep(2)
+        except:
+            pass
+        
+        # Click on Violentmonkey
+        try:
+            vm_element = driver.find_element(By.XPATH, "//*[contains(text(), 'Violentmonkey')]")
+            vm_element.click()
+            time.sleep(3)
+            
+            # Try to access preferences/options
+            try:
+                prefs_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Preferences') or contains(text(), 'Options')]")
+                prefs_btn.click()
+                time.sleep(4)
+                
+                # Check page source for userscript name
+                page_source = driver.page_source
+                if "Auto-Solver" in page_source or "Symbol Game" in page_source:
+                    logger.info("✅✅✅ USERSCRIPT FOUND IN DASHBOARD!")
+                    return True
+                else:
+                    logger.info("⚠️ Userscript not visible in dashboard")
+                    
+            except Exception as e:
+                logger.warning(f"Could not access dashboard: {e}")
+                
+        except Exception as e:
+            logger.warning(f"Could not click Violentmonkey: {e}")
+        
+    except Exception as e:
+        logger.error(f"Verification error: {e}")
+    
+    return False
 
 def setup_browser():
     """Setup Firefox browser with extensions and userscript"""
@@ -308,13 +398,32 @@ def setup_browser():
         # Wait for extensions to load
         time.sleep(10)
         
+        # Verify extensions loaded
+        driver.get("about:addons")
+        time.sleep(3)
+        try:
+            ext_tab = driver.find_element(By.CSS_SELECTOR, "button[name='extension']")
+            ext_tab.click()
+            time.sleep(2)
+        except:
+            pass
+        
+        page_source = driver.page_source.lower()
+        if "violentmonkey" in page_source:
+            logger.info("✅ Violentmonkey is loaded!")
+        else:
+            logger.warning("⚠️ Violentmonkey not detected in addons page")
+        
         # Install userscript
         success = install_userscript_properly(driver)
+        
         if success:
-            state.extensions_installed = True
-            logger.info("All extensions and userscript installed successfully!")
-        else:
-            logger.warning("Userscript installation failed, but continuing...")
+            logger.info("🎉 INSTALLATION COMPLETED - VERIFYING...")
+            time.sleep(5)
+            verify_userscript_installed(driver)
+        
+        state.extensions_installed = True
+        logger.info("Browser setup completed successfully!")
         
         return driver
         
@@ -469,19 +578,14 @@ class LeaderboardParser:
             soup = BeautifulSoup(html, 'html.parser')
             leaderboard = []
             
-            selectors = [
-                'div[style*="width:250px"][style*="margin:5px auto"]',
-                'div[style*="width:250px"]',
-                'div[style*="margin:5px auto"]',
-            ]
-            
-            entries = []
-            for selector in selectors:
-                entries = soup.select(selector)
-                if entries:
-                    break
+            # Look for leaderboard entries - they have specific patterns
+            entries = soup.find_all('div', style=re.compile(r'width:\s*250px'))
+            if not entries:
+                # Alternative selector
+                entries = soup.find_all('div', style=re.compile(r'margin:\s*5px auto'))
             
             if not entries:
+                # Try to find any divs containing the pattern
                 all_divs = soup.find_all('div')
                 entries = [div for div in all_divs if 'T:' in div.get_text() and 'Y:' in div.get_text()]
             
@@ -489,12 +593,14 @@ class LeaderboardParser:
             for entry in entries:
                 text = entry.get_text(strip=True)
                 
+                # Extract user ID
                 user_match = re.search(r'#(\d+)', text)
                 if not user_match:
                     continue
                 
                 user_id = user_match.group(1)
                 
+                # Extract credits
                 today_match = re.search(r'T:\s*(\d+(?:,\d+)*)', text)
                 yesterday_match = re.search(r'Y:\s*(\d+(?:,\d+)*)', text)
                 db_match = re.search(r'DB:\s*(\d+(?:,\d+)*)', text)
@@ -521,22 +627,71 @@ class LeaderboardParser:
             
             return leaderboard
         except Exception as e:
-            logger.error(f"Error parsing leaderboard: {e}")
+            logger.error(f"Error parsing leaderboard with BeautifulSoup: {e}")
+            return []
+    
+    @staticmethod
+    def parse_with_regex(html: str) -> List[Dict]:
+        """Alternative parsing method using regex"""
+        try:
+            leaderboard = []
+            
+            # Pattern to match leaderboard entries
+            pattern = r'#(\d+).*?T:\s*(\d+(?:,\d+)*).*?Y:\s*(\d+(?:,\d+)*).*?DB:\s*(\d+(?:,\d+)*)'
+            matches = re.findall(pattern, html, re.DOTALL)
+            
+            rank = 1
+            for match in matches:
+                user_id = match[0]
+                today = int(match[1].replace(',', '')) if match[1] else 0
+                yesterday = int(match[2].replace(',', '')) if match[2] else 0
+                day_before = int(match[3].replace(',', '')) if match[3] else 0
+                
+                leaderboard.append({
+                    'rank': rank,
+                    'user_id': user_id,
+                    'total_surfed': today + yesterday + day_before,
+                    'today_credits': today,
+                    'yesterday_credits': yesterday,
+                    'day_before_credits': day_before
+                })
+                rank += 1
+            
+            return leaderboard
+        except Exception as e:
+            logger.error(f"Error parsing leaderboard with regex: {e}")
             return []
     
     @staticmethod
     def parse(html: str) -> List[Dict]:
+        # Try BeautifulSoup first
         leaderboard = LeaderboardParser.parse_with_beautifulsoup(html)
+        if not leaderboard:
+            # Fallback to regex
+            leaderboard = LeaderboardParser.parse_with_regex(html)
+        
         leaderboard.sort(key=lambda x: x['rank'])
         return leaderboard
 
 def fetch_leaderboard() -> Optional[List[Dict]]:
     try:
+        # Exact headers that work with the site
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://adsha.re',
+            'Connection': 'keep-alive',
+            'Referer': 'https://adsha.re/surf',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
         }
         
+        # Try with POST request (common for leaderboard updates)
         response = requests.post(
             CONFIG['leaderboard_url'],
             headers=headers,
@@ -549,9 +704,17 @@ def fetch_leaderboard() -> Optional[List[Dict]]:
                 logger.info(f"Successfully parsed {len(leaderboard)} leaderboard entries")
                 return leaderboard
             else:
-                logger.warning("Leaderboard parsed but empty")
+                logger.warning("Leaderboard parsed but empty - trying alternative method")
+                # Try GET request as fallback
+                response_get = requests.get(CONFIG['leaderboard_url'], headers=headers, timeout=30)
+                if response_get.status_code == 200:
+                    leaderboard = LeaderboardParser.parse(response_get.text)
+                    if leaderboard:
+                        logger.info(f"GET method parsed {len(leaderboard)} entries")
+                        return leaderboard
         else:
             logger.error(f"HTTP {response.status_code} fetching leaderboard")
+            
         return None
             
     except Exception as e:
@@ -587,13 +750,15 @@ def send_telegram_message(message: str, image_data=None):
     try:
         url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage"
         data = {'chat_id': CONFIG['chat_id'], 'text': message, 'parse_mode': 'HTML'}
-        requests.post(url, data=data, timeout=15)
+        response = requests.post(url, data=data, timeout=15)
         
         if image_data:
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             files = {'photo': ('screenshot.png', image_data, 'image/png')}
             data = {'chat_id': CONFIG['chat_id']}
             requests.post(url, files=files, data=data, timeout=15)
+            
+        logger.info("Telegram message sent successfully")
     except Exception as e:
         logger.error(f"Telegram error: {e}")
 
@@ -605,8 +770,15 @@ def check_competition_status():
     leaderboard = fetch_leaderboard()
     if not leaderboard:
         logger.error("Failed to fetch leaderboard")
-        if state.driver and not state.is_logged_in:
-            force_login(state.driver)
+        # Try to restart browser if leaderboard fails
+        if state.driver:
+            try:
+                state.driver.quit()
+            except:
+                pass
+            state.driver = setup_browser()
+            if state.driver:
+                force_login(state.driver)
         return
     
     state.leaderboard = leaderboard
@@ -651,16 +823,10 @@ def check_competition_status():
         if my_value >= target:
             status_message = f"✅ TARGET ACHIEVED! Position #1 secured"
             state.target_achieved = True
-            # Can stop browser if target achieved
-            if state.driver:
-                state.browser_active = False
         else:
             gap = target - my_value
             status_message = f"🏃 CHASING TARGET - Need {gap} more credits"
             state.target_achieved = False
-            # Ensure browser is running
-            if state.driver:
-                state.browser_active = True
     
     # Send status to Telegram
     full_message = f"""
@@ -670,9 +836,16 @@ def check_competition_status():
 📈 Growth Rate: <b>{state.credits_growth_rate:.1f}/hour</b>
 
 {status_message}
-    """.strip()
+
+📊 <b>Top 3:</b>
+"""
     
-    send_telegram_message(full_message)
+    # Add top 3 to message
+    for i, entry in enumerate(state.leaderboard[:3]):
+        medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉"
+        full_message += f"{medal} #{entry['user_id']}: {entry['today_credits']} today\n"
+    
+    send_telegram_message(full_message.strip())
     
     # Take screenshot if browser is active
     if state.driver and state.browser_active:
@@ -735,6 +908,16 @@ def telegram_bot_loop():
                                             send_telegram_message("✅ Browser restarted!")
                                         else:
                                             send_telegram_message("❌ Browser restart failed")
+                                elif command == '/leaderboard':
+                                    leaderboard = fetch_leaderboard()
+                                    if leaderboard:
+                                        lb_message = "🏆 <b>Current Leaderboard</b>\n\n"
+                                        for entry in leaderboard[:5]:
+                                            medal = "🥇" if entry['rank'] == 1 else "🥈" if entry['rank'] == 2 else "🥉" if entry['rank'] == 3 else "🔸"
+                                            lb_message += f"{medal} #{entry['user_id']}: {entry['today_credits']} today\n"
+                                        send_telegram_message(lb_message)
+                                    else:
+                                        send_telegram_message("❌ Could not fetch leaderboard")
         except Exception as e:
             logger.error(f"Telegram bot error: {e}")
         
@@ -793,9 +976,11 @@ def main_loop():
                         current_url = state.driver.current_url
                         if "adsha.re" not in current_url:
                             state.driver.get(CONFIG['browser_url'])
+                            logger.info("Refreshed browser page")
                             time.sleep(5)
-                    except:
-                        # Browser might be dead, try to restart
+                    except Exception as e:
+                        logger.error(f"Browser refresh failed: {e}")
+                        # Try to restart browser
                         try:
                             state.driver.quit()
                         except:
