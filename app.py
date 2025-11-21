@@ -73,7 +73,7 @@ EXTENSIONS = {
     }
 }
 
-USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554948-very-smart-symbol-game-auto-solver-pro-v3-4-with-auto-loginallapps"
+USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554286-very-smart-symbol-game-auto-solver-pro-v3-4-with-auto-login"
 
 # ==================== LOGGING ====================
 
