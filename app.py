@@ -50,7 +50,7 @@ CONFIG = {
     'leaderboard_check_interval': 1800,
     'safety_margin': 250,
     'competition_strategy': 'today_only',
-    'my_user_id': '4150',
+    'my_user_id': '4242',
     'browser_url': "https://adsha.re/surf",
     'login_url': "https://adsha.re/login",  # Added login URL
     'leaderboard_url': 'https://adsha.re/ten',
