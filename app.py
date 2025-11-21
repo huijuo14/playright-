@@ -45,10 +45,10 @@ except ImportError:
 CONFIG = {
     'telegram_token': "8332516699:AAF8287h5Be4ejvhoFpcYiHG4YHVJlH_R0g",
     'chat_id': None,
-    'email': 'jiocloud90@gmail.com',
+    'email': 'loginallapps@gmail.com',
     'password': '@Sd2007123',
     'leaderboard_check_interval': 1800,
-    'safety_margin': 666,
+    'safety_margin': 250,
     'competition_strategy': 'today_only',
     'my_user_id': '4150',
     'browser_url': "https://adsha.re/surf",
