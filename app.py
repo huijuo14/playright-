@@ -45,7 +45,7 @@ except ImportError:
 CONFIG = {
     'telegram_token': "8332516699:AAF8287h5Be4ejvhoFpcYiHG4YHVJlH_R0g",
     'chat_id': None,
-    'email': 'loginallapps@gmail.com',
+    'email': 'jiocloud90@gmail.com',
     'password': '@Sd2007123',
     'leaderboard_check_interval': 1800,
     'safety_margin': 250,
