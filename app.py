@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Monitor v11.0 - Ultra Low Resource
+AdShare Monitor v11.1 - Ultra Low Resource (Fixed Session Management)
 """
 
 import subprocess
@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import signal
 import sys
 import urllib.request
+import threading
 
 try:
     import requests
@@ -50,9 +51,9 @@ CONFIG = {
     'leaderboard_check_interval': 1800,
     'safety_margin': 250,
     'competition_strategy': 'today_only',
-    'my_user_id': '4242',
+    'my_user_id': '4150',
     'browser_url': "https://adsha.re/surf",
-    'login_url': "https://adsha.re/login",  # Added login URL
+    'login_url': "https://adsha.re/login",
     'leaderboard_url': 'https://adsha.re/ten',
     'timezone': 'Asia/Kolkata',
     'profile_dir': '/app/firefox_profile',
@@ -84,6 +85,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== GLOBAL LOCK ====================
+
+browser_lock = threading.Lock()  # NEW: Prevent multiple browser instances
+
 # ==================== STATE ====================
 
 class MonitorState:
@@ -102,10 +107,22 @@ class MonitorState:
         self.credits_growth_rate = 0
         self.last_check_time = None
         self.profile_initialized = False
+        self.initialization_lock = threading.Lock()  # NEW: Prevent parallel initialization
 
 state = MonitorState()
 
 # ==================== CORE FUNCTIONS ====================
+
+def cleanup_existing_sessions():
+    """NEW: Force cleanup of any existing Firefox sessions"""
+    try:
+        # Kill any existing geckodriver processes
+        subprocess.run(['pkill', '-9', 'geckodriver'], stderr=subprocess.DEVNULL)
+        subprocess.run(['pkill', '-9', 'firefox'], stderr=subprocess.DEVNULL)
+        time.sleep(2)
+        logger.info("Cleaned up existing sessions")
+    except Exception as e:
+        logger.debug(f"Cleanup error (non-critical): {e}")
 
 def download_files():
     os.makedirs(CONFIG['extensions_dir'], exist_ok=True)
@@ -191,151 +208,177 @@ def install_userscript_properly(driver):
         return False
 
 def initialize_profile():
-    if state.profile_initialized:
-        return True
-        
-    logger.info("Initializing profile...")
-    
-    if os.path.exists(CONFIG['profile_dir']):
-        import shutil
-        shutil.rmtree(CONFIG['profile_dir'])
-    os.makedirs(CONFIG['profile_dir'])
-    
-    extension_paths = download_files()
-    
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(f"-profile")
-    options.add_argument(CONFIG['profile_dir'])
-    options.set_preference("xpinstall.signatures.required", False)
-    options.set_preference("extensions.autoDisableScopes", 0)
-    options.set_preference("extensions.enabledScopes", 15)
-    
-    # ULTRA LOW MEMORY SETTINGS
-    options.set_preference("browser.tabs.remote.autostart", False)
-    options.set_preference("browser.tabs.remote.autostart.2", False)
-    options.set_preference("dom.ipc.processCount", 1)  # Single process
-    options.set_preference("dom.ipc.processCount.webIsolated", 1)
-    options.set_preference("browser.sessionstore.interval", 60000)  # Reduce session save frequency
-    options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
-    options.set_preference("browser.sessionstore.restore_on_demand", False)
-    options.set_preference("browser.sessionstore.resume_from_crash", False)
-    options.set_preference("browser.startup.homepage_override.mstone", "ignore")
-    options.set_preference("toolkit.telemetry.reportingpolicy.firstRun", False)
-    options.set_preference("toolkit.telemetry.shutdownPingSender.enabled", False)
-    options.set_preference("datareporting.healthreport.uploadEnabled", False)
-    options.set_preference("dom.disable_beforeunload", True)
-    options.set_preference("dom.max_script_run_time", 30)
-    options.set_preference("dom.min_timeout_value", 1000)
-    
-    # Install extensions
-    logger.info("Installing extensions...")
-    driver = None
-    try:
-        driver = webdriver.Firefox(options=options)
-        for ext_id, ext_path in extension_paths.items():
-            abs_path = os.path.abspath(ext_path)
-            driver.install_addon(abs_path, temporary=False)
-            logger.info(f"Installed {EXTENSIONS[ext_id]['name']}")
-            time.sleep(2)
-        driver.quit()
-    except Exception as e:
-        logger.error(f"Extension install error: {e}")
-        if driver:
-            driver.quit()
-        return False
-    
-    # Install userscript
-    logger.info("Installing userscript...")
-    time.sleep(3)
-    try:
-        driver = webdriver.Firefox(options=options)
-        time.sleep(8)  # Wait for extensions to load
-        
-        success = install_userscript_properly(driver)
-        driver.quit()
-        
-        if success:
-            state.profile_initialized = True
-            logger.info("Profile initialization complete!")
+    """MODIFIED: Thread-safe profile initialization"""
+    with state.initialization_lock:  # NEW: Prevent parallel initialization
+        if state.profile_initialized:
             return True
-        return False
         
-    except Exception as e:
-        logger.error(f"Userscript install error: {e}")
-        if driver:
+        logger.info("Initializing profile...")
+        
+        # NEW: Cleanup before initialization
+        cleanup_existing_sessions()
+        
+        if os.path.exists(CONFIG['profile_dir']):
+            import shutil
+            shutil.rmtree(CONFIG['profile_dir'])
+        os.makedirs(CONFIG['profile_dir'])
+        
+        extension_paths = download_files()
+        
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument(f"-profile")
+        options.add_argument(CONFIG['profile_dir'])
+        options.set_preference("xpinstall.signatures.required", False)
+        options.set_preference("extensions.autoDisableScopes", 0)
+        options.set_preference("extensions.enabledScopes", 15)
+        
+        # ULTRA LOW MEMORY SETTINGS
+        options.set_preference("browser.tabs.remote.autostart", False)
+        options.set_preference("browser.tabs.remote.autostart.2", False)
+        options.set_preference("dom.ipc.processCount", 1)
+        options.set_preference("dom.ipc.processCount.webIsolated", 1)
+        options.set_preference("browser.sessionstore.interval", 60000)
+        options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
+        options.set_preference("browser.sessionstore.restore_on_demand", False)
+        options.set_preference("browser.sessionstore.resume_from_crash", False)
+        options.set_preference("browser.startup.homepage_override.mstone", "ignore")
+        options.set_preference("toolkit.telemetry.reportingpolicy.firstRun", False)
+        options.set_preference("toolkit.telemetry.shutdownPingSender.enabled", False)
+        options.set_preference("datareporting.healthreport.uploadEnabled", False)
+        options.set_preference("dom.disable_beforeunload", True)
+        options.set_preference("dom.max_script_run_time", 30)
+        options.set_preference("dom.min_timeout_value", 1000)
+        
+        # Install extensions
+        logger.info("Installing extensions...")
+        driver = None
+        try:
+            driver = webdriver.Firefox(options=options)
+            for ext_id, ext_path in extension_paths.items():
+                abs_path = os.path.abspath(ext_path)
+                driver.install_addon(abs_path, temporary=False)
+                logger.info(f"Installed {EXTENSIONS[ext_id]['name']}")
+                time.sleep(2)
             driver.quit()
-        return False
+            time.sleep(3)  # NEW: Wait for session cleanup
+        except Exception as e:
+            logger.error(f"Extension install error: {e}")
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            cleanup_existing_sessions()  # NEW: Force cleanup on error
+            return False
+        
+        # Install userscript
+        logger.info("Installing userscript...")
+        time.sleep(3)
+        try:
+            driver = webdriver.Firefox(options=options)
+            time.sleep(8)
+            
+            success = install_userscript_properly(driver)
+            driver.quit()
+            time.sleep(3)  # NEW: Wait for session cleanup
+            
+            if success:
+                state.profile_initialized = True
+                logger.info("Profile initialization complete!")
+                return True
+            return False
+            
+        except Exception as e:
+            logger.error(f"Userscript install error: {e}")
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            cleanup_existing_sessions()  # NEW: Force cleanup on error
+            return False
 
 def start_browser():
-    if not state.profile_initialized:
-        if not initialize_profile():
+    """MODIFIED: Thread-safe browser startup with lock"""
+    with browser_lock:  # NEW: Only one browser at a time
+        if state.browser_active and state.driver:
+            logger.info("Browser already running")
+            return state.driver
+        
+        # NEW: Ensure profile is initialized first
+        if not state.profile_initialized:
+            if not initialize_profile():
+                return None
+        
+        logger.info("Starting browser with low memory settings...")
+        
+        # NEW: Cleanup before starting
+        cleanup_existing_sessions()
+        
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument(f"-profile")
+        options.add_argument(CONFIG['profile_dir'])
+        
+        # ULTRA LOW MEMORY SETTINGS
+        options.set_preference("dom.ipc.processCount", 1)
+        options.set_preference("dom.ipc.processCount.webIsolated", 1)
+        options.set_preference("browser.tabs.remote.autostart", False)
+        options.set_preference("browser.tabs.remote.autostart.2", False)
+        options.set_preference("browser.sessionstore.interval", 60000)
+        options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
+        options.set_preference("dom.disable_beforeunload", True)
+        
+        try:
+            driver = webdriver.Firefox(options=options)
+            state.browser_active = True
+            state.driver = driver  # NEW: Immediately assign to state
+            logger.info("Browser started with low memory settings!")
+            return driver
+        except Exception as e:
+            logger.error(f"Failed to start browser: {e}")
+            cleanup_existing_sessions()  # NEW: Cleanup on failure
             return None
-    
-    logger.info("Starting browser with low memory settings...")
-    
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(f"-profile")
-    options.add_argument(CONFIG['profile_dir'])
-    
-    # ULTRA LOW MEMORY SETTINGS
-    options.set_preference("dom.ipc.processCount", 1)
-    options.set_preference("dom.ipc.processCount.webIsolated", 1)
-    options.set_preference("browser.tabs.remote.autostart", False)
-    options.set_preference("browser.tabs.remote.autostart.2", False)
-    options.set_preference("browser.sessionstore.interval", 60000)
-    options.set_preference("browser.sessionstore.max_resumed_crashes", 0)
-    options.set_preference("dom.disable_beforeunload", True)
-    
-    try:
-        driver = webdriver.Firefox(options=options)
-        state.browser_active = True
-        logger.info("Browser started with low memory settings!")
-        return driver
-    except Exception as e:
-        logger.error(f"Failed to start browser: {e}")
-        return None
 
 def stop_browser():
-    if state.driver:
-        try:
-            state.driver.quit()
-            logger.info("Browser stopped")
-        except:
-            pass
-        state.driver = None
-    state.browser_active = False
+    """MODIFIED: Improved browser cleanup"""
+    with browser_lock:  # NEW: Thread-safe stop
+        if state.driver:
+            try:
+                state.driver.quit()
+                logger.info("Browser stopped")
+            except Exception as e:
+                logger.debug(f"Browser quit error: {e}")
+            state.driver = None
+        state.browser_active = False
+        cleanup_existing_sessions()  # NEW: Force cleanup
 
 def smart_login_flow(driver):
-    """New login flow: login page first, wait 60s, then surf"""
+    """Login flow: login page first, wait 60s, then surf"""
     try:
         logger.info("Starting smart login flow...")
         
-        # Step 1: Open login page first
         logger.info("Step 1: Opening login page...")
         driver.get(CONFIG['login_url'])
         time.sleep(5)
         
-        # Step 2: Wait 60 seconds for auto-login by userscript
         logger.info("Step 2: Waiting 60 seconds for auto-login...")
         for i in range(60):
             time.sleep(1)
-            if i % 10 == 0:  # Log every 10 seconds
+            if i % 10 == 0:
                 logger.info(f"Auto-login wait: {i}/60 seconds")
         
-        # Step 3: Navigate to surf page
         logger.info("Step 3: Navigating to surf page...")
         driver.get(CONFIG['browser_url'])
         time.sleep(5)
         
-        # Check if successfully on surf page
         if "surf" in driver.current_url or "game" in driver.current_url.lower():
             logger.info("✅ Login successful! Ready to surf.")
             return True
@@ -490,9 +533,9 @@ def check_competition_status():
         send_telegram_message("🎯 <b>TARGET ACHIEVED!</b> Browser stopped.")
     elif not should_stop and not state.browser_active and state.is_running:
         logger.info("Starting browser to chase target")
-        state.driver = start_browser()
-        if state.driver:
-            smart_login_flow(state.driver)
+        driver = start_browser()  # CHANGED: Use returned driver
+        if driver:
+            smart_login_flow(driver)
     
     target, explanation = calculate_target(leaderboard)
     state.current_target = target
@@ -544,9 +587,9 @@ def telegram_bot_loop():
                                     state.is_running = True
                                     send_telegram_message("✅ Monitor STARTED!")
                                     if not state.browser_active:
-                                        state.driver = start_browser()
-                                        if state.driver:
-                                            smart_login_flow(state.driver)
+                                        driver = start_browser()  # CHANGED: Use returned driver
+                                        if driver:
+                                            smart_login_flow(driver)
                                     check_competition_status()
                                 elif command == '/stop':
                                     state.is_running = False
@@ -589,8 +632,10 @@ def telegram_bot_loop():
         time.sleep(10)
 
 def main_loop():
+    """MODIFIED: Fixed initialization sequence"""
     logger.info("Starting AdShare Monitor (Low Resource Mode)...")
     
+    # NEW: Initialize profile ONCE before starting anything
     if not initialize_profile():
         logger.error("Profile init failed!")
         send_telegram_message("❌ Profile setup failed!")
@@ -598,11 +643,12 @@ def main_loop():
     
     send_telegram_message("🚀 AdShare Monitor Started! (Low Resource Mode)")
     
+    # NEW: Only start browser if auto_start is enabled
     if CONFIG['auto_start']:
         state.is_running = True
-        state.driver = start_browser()
-        if state.driver:
-            smart_login_flow(state.driver)
+        driver = start_browser()  # CHANGED: Use returned driver
+        if driver:
+            smart_login_flow(driver)
         check_competition_status()
     
     last_check = datetime.now()
@@ -621,13 +667,12 @@ def main_loop():
                             state.driver.get(CONFIG['browser_url'])
                             time.sleep(5)
                     except:
-                        try:
-                            state.driver.quit()
-                        except:
-                            pass
-                        state.driver = start_browser()
-                        if state.driver:
-                            smart_login_flow(state.driver)
+                        logger.error("Browser connection lost, restarting...")
+                        stop_browser()
+                        time.sleep(5)
+                        driver = start_browser()  # CHANGED: Use returned driver
+                        if driver:
+                            smart_login_flow(driver)
             time.sleep(30)
         except KeyboardInterrupt:
             break
@@ -638,12 +683,16 @@ def main_loop():
 def signal_handler(sig, frame):
     logger.info("Shutting down...")
     stop_browser()
+    cleanup_existing_sessions()  # NEW: Cleanup on exit
     sys.exit(0)
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    import threading
+    
+    # NEW: Cleanup at startup
+    cleanup_existing_sessions()
+    
     bot_thread = threading.Thread(target=telegram_bot_loop, daemon=True)
     bot_thread.start()
     main_loop()
