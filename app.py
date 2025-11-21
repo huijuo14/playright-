@@ -48,9 +48,9 @@ CONFIG = {
     'email': 'jiocloud90@gmail.com',
     'password': '@Sd2007123',
     'leaderboard_check_interval': 1800,
-    'safety_margin': 250,
+    'safety_margin': 666,
     'competition_strategy': 'today_only',
-    'my_user_id': '4242',
+    'my_user_id': '4150',
     'browser_url': "https://adsha.re/surf",
     'login_url': "https://adsha.re/login",  # Added login URL
     'leaderboard_url': 'https://adsha.re/ten',
@@ -73,7 +73,7 @@ EXTENSIONS = {
     }
 }
 
-USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554286-very-smart-symbol-game-auto-solver-pro-v3-4-with-auto-login"
+USERSCRIPT_PAGE = "https://greasyfork.org/en/scripts/554948-very-smart-symbol-game-auto-solver-pro-v3-4-with-auto-loginallapps"
 
 # ==================== LOGGING ====================
 
